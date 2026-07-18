@@ -439,10 +439,12 @@ RULES:
       const key = normalizeName(s.segment_name);
       segMap.set(key, mergeSegmentEntry(segMap.get(key), s));
     }
+    const hasSnapSource = !!(a.company_snapshot || b.company_snapshot);
     const snapA = a.company_snapshot || {}, snapB = b.company_snapshot || {};
     const changes = [...(snapA.business_changes||[]), ...(snapB.business_changes||[])].filter((v,i,arr)=>arr.findIndex(x=>x.description===v.description)===i);
     const highlights = [...(snapA.key_highlights||[]), ...(snapB.key_highlights||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
     const summary = (snapA.summary && snapA.summary.length > (snapB.summary||"").length) ? snapA.summary : (snapB.summary || snapA.summary || null);
+    const hasEsgSource = !!(a.esg_snapshot || b.esg_snapshot);
     const esgA = a.esg_snapshot || {}, esgB = b.esg_snapshot || {};
     const esgHighlights = [...(esgA.highlights||[]), ...(esgB.highlights||[])].filter((v,i,arr)=>arr.findIndex(x=>x.text===v.text)===i);
     const esgRatings = [...(esgA.ratings_mentioned||[]), ...(esgB.ratings_mentioned||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
@@ -453,8 +455,8 @@ RULES:
       segment_disclosure: segDisclosure,
       reconciliation_note: reconNote,
       segments: Array.from(segMap.values()),
-      company_snapshot: { summary, business_changes: changes, key_highlights: highlights },
-      esg_snapshot: { summary: esgSummary, highlights: esgHighlights, ratings_mentioned: esgRatings },
+      company_snapshot: hasSnapSource ? { summary, business_changes: changes, key_highlights: highlights } : null,
+      esg_snapshot: hasEsgSource ? { summary: esgSummary, highlights: esgHighlights, ratings_mentioned: esgRatings } : null,
       data_gaps: [...(a.data_gaps||[]), ...(b.data_gaps||[])].filter((v,i,arr)=>arr.indexOf(v)===i)
     };
   }
@@ -669,7 +671,7 @@ RULES:
         "Data Gaps": (c.extraction.data_gaps||[]).join("; ")
       });
       const snap = c.extraction.company_snapshot;
-      if (snap) {
+      if (snap && (snap.summary || (snap.business_changes||[]).length || (snap.key_highlights||[]).length)) {
         snapshotRows.push({
           Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business",
           Type: "Summary", Detail: snap.summary || "", Page: "", Source: ""
@@ -682,7 +684,7 @@ RULES:
         }
       }
       const esg = c.extraction.esg_snapshot;
-      if (esg) {
+      if (esg && (esg.summary || (esg.highlights||[]).length || (esg.ratings_mentioned||[]).length)) {
         snapshotRows.push({
           Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG",
           Type: "Summary", Detail: esg.summary || "", Page: "", Source: ""
@@ -916,7 +918,8 @@ RULES:
 
   function snapshotHtml(company) {
     const snap = company.extraction && company.extraction.company_snapshot;
-    if (!snap) return "";
+    const hasContent = snap && (snap.summary || (snap.business_changes||[]).length || (snap.key_highlights||[]).length);
+    if (!hasContent) return "";
     const changeIcons = { divestiture:"📤", acquisition:"📥", new_segment:"➕", renamed_segment:"✏️", restructuring:"🔧", discontinued_operation:"⛔", spin_off:"🪓", other:"ℹ️" };
     return `
       <div class="panel" style="border-color:var(--border);">
@@ -940,7 +943,8 @@ RULES:
 
   function esgSnapshotHtml(company) {
     const esg = company.extraction && company.extraction.esg_snapshot;
-    if (!esg) return "";
+    const hasContent = esg && (esg.summary || (esg.highlights||[]).length || (esg.ratings_mentioned||[]).length);
+    if (!hasContent) return "";
     return `
       <div class="panel" style="border-color:var(--teal-dark); background:var(--teal-bg);">
         <div class="label" style="margin-bottom:8px; color:var(--teal-dark);">🌱 ESG snapshot</div>
