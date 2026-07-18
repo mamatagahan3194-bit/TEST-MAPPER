@@ -87,8 +87,8 @@
     <div class="header">
       <div>
         <div class="brand">💵 REVENUE LEDGER 001 — MULTI-COMPANY</div>
-        <h1>Segment Revenue &amp; NAICS Mapping — batch mode</h1>
-        <p class="sub">Add one card per company, upload each 10-K / annual report. Extracts segment revenue and maps each to both NAICS and GICS codes with estimation logic and key products — if segments are reported by geography, they're consolidated into one company-wide estimation instead. Export everything to Excel.</p>
+        <h1>Segment Revenue & GICS Mapping — batch mode</h1>
+        <p class="sub">Add one card per company, upload each 10-K / annual report. Extracts segment revenue and maps each to GICS codes with estimation logic and key products — if segments are reported by geography, they're consolidated into one company-wide estimation instead. Export everything to Excel.</p>
       </div>
       <div id="globalBadge"></div>
     </div>
@@ -128,7 +128,11 @@
   }
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
-  const KEYWORDS = /segment|segmental|reportable segment|operating segment|single (reportable|operating) segment|one (reportable|operating) segment|net (sales|revenue)|total net (sales|revenue)|net turnover|turnover|total income|business unit|naics|revenue by (segment|category|division|product)|product categor|revenue stream|disaggregat|consolidated statements? of (operations|income)|consolidated income statement|total revenue|corporate.{0,10}(eliminations|other|unallocated)|divisional (performance|results|revenue)|by (division|category|reportable segment|product)|divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments|sustainab|\bESG\b|net zero|net-zero|carbon neutral|emissions? (target|reduction|goal)|MSCI|CDP\b|sustainalytics|board (composition|diversity)|governance|materiality|controvers/i;
+  const CORE_KEYWORDS = /segment|segmental|reportable segment|operating segment|single (reportable|operating) segment|one (reportable|operating) segment|net (sales|revenue)|total net (sales|revenue)|net turnover|turnover|total income|business unit|naics|revenue by (segment|category|division|product)|product categor|revenue stream|disaggregat|consolidated statements? of (operations|income)|consolidated income statement|total revenue|corporate.{0,10}(eliminations|other|unallocated)|divisional (performance|results|revenue)|by (division|category|reportable segment|product)/i;
+  const SNAPSHOT_KEYWORDS = /divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments|sustainab|\bESG\b|net zero|net-zero|carbon neutral|emissions? (target|reduction|goal)|MSCI|CDP\b|sustainalytics|board (composition|diversity)|governance|materiality|controvers/i;
+  function getKeywords(includeSnapshots) {
+    return includeSnapshots ? new RegExp(CORE_KEYWORDS.source + "|" + SNAPSHOT_KEYWORDS.source, "i") : CORE_KEYWORDS;
+  }
   const HIGH_PRIORITY_KEYWORDS = /consolidated statements? of operations|consolidated income statement|consolidated statements? of income|total (net )?revenue/i;
   const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // gemini-2.5-flash-lite and gemini-2.5-flash are both retired for new usage. 3.1 Flash-Lite (~$0.25/$1.50 per 1M tokens) is the current cheap tier. Check ai.google.dev/gemini-api/docs/models if this also becomes stale.
 
@@ -282,7 +286,7 @@
     return {
       tier:"unmapped_needs_review",
       estimation_logic:"Automatic mapping failed" + (reason ? (": " + reason) : "") + " — use Retry or classify manually.",
-      naics_allocations:[], gics_allocations:[]
+      gics_allocations:[]
     };
   }
 
@@ -296,7 +300,14 @@
     return null;
   }
 
-  const EXTRACTION_SYSTEM = `You are a financial disclosure extraction specialist. Accuracy is critical — this data is used for analyst review. Past errors have included: mismatched segment/total revenue, segments incorrectly marked as not disclosed when a figure was actually present, and — most seriously — fabricated segments where a product or brand name mentioned in narrative/marketing text (e.g. "Veet bikini") was invented as if it were an official reportable segment. You are shown selected page images from a company's annual report / 10-K (each preceded by its page number).
+  function buildExtractionSystem(includeSnapshots) {
+    const snapshotRules = includeSnapshots ? `
+16. COMPANY SNAPSHOT — scan for and summarize any of the following if mentioned anywhere in the pages shown: divestitures/disposals, acquisitions, discontinued operations, new segments added, segments renamed/restructured, spin-offs, major strategic changes. Populate company_snapshot.business_changes with one entry per event (type, description, page, source_quote). Populate company_snapshot.key_highlights with 2-5 short bullets on notable developments an analyst should know. Populate company_snapshot.summary with a 2-3 sentence overview of where the company stands. If none found, say so explicitly rather than leaving it sparse — do not fabricate events.
+17. ESG SNAPSHOT — scan for and summarize any ESG-relevant content mentioned anywhere in the pages shown: sustainability commitments or targets (e.g. net zero dates, emissions reduction goals), ESG ratings or scores if explicitly stated (e.g. "MSCI AA", "CDP A-", "Sustainalytics score"), governance highlights (board composition, diversity disclosures), and any controversies, litigation, or ESG-related risks mentioned. Populate esg_snapshot.summary with a 2-3 sentence overview of the company's ESG positioning based only on what's in these pages. Populate esg_snapshot.highlights with 2-5 short bullets (each tagged with a page number where possible). Populate esg_snapshot.ratings_mentioned with any explicitly stated third-party ESG ratings/scores (empty array if none). If no ESG content is found in the pages shown, say so explicitly in summary rather than leaving it sparse — do not infer or estimate ESG performance that isn't explicitly stated.` : "";
+    const snapshotSchema = includeSnapshots ? `
+ "company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]},
+ "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]},` : "";
+    return `You are a financial disclosure extraction specialist. Accuracy is critical — this data is used for analyst review. Past errors have included: mismatched segment/total revenue, segments incorrectly marked as not disclosed when a figure was actually present, and — most seriously — fabricated segments where a product or brand name mentioned in narrative/marketing text (e.g. "Veet bikini") was invented as if it were an official reportable segment. You are shown selected page images from a company's annual report / 10-K (each preceded by its page number).
 RULES:
 1. FIRST, DETERMINE THE SEGMENTATION BASIS available in this filing, in this priority order, and record it in segment_disclosure:
    a. "formal_business_segments" — the company explicitly states its reportable business/product segments (e.g. "The Group is organised into N segments/divisions: A, B, C") or has a formal segment/segmental note broken out by business line. This is the preferred basis whenever it exists.
@@ -318,9 +329,7 @@ RULES:
 12. Every figure (company_total_revenue and every segment) MUST include the exact page number it was read from (the "Page N:" label shown with that image). Mandatory for verification.
 13. disclosure_type per segment: "exact" (clean single-line figure), "aggregated" (bundles multiple lines), or "not_disclosed" (per rule 11).
 14. segment_type per segment: "business" (includes product-category-disaggregation rows and the single-segment case), "geographic" (only per rule 1d), or "reconciling_item" (per rule 5).
-15. company_business_description: 1-2 sentence summary of overall products/services, from the business overview section if present.
-16. COMPANY SNAPSHOT — scan for and summarize any of the following if mentioned anywhere in the pages shown: divestitures/disposals, acquisitions, discontinued operations, new segments added, segments renamed/restructured, spin-offs, major strategic changes. Populate company_snapshot.business_changes with one entry per event (type, description, page, source_quote). Populate company_snapshot.key_highlights with 2-5 short bullets on notable developments an analyst should know. Populate company_snapshot.summary with a 2-3 sentence overview of where the company stands. If none found, say so explicitly rather than leaving it sparse — do not fabricate events.
-17. ESG SNAPSHOT — scan for and summarize any ESG-relevant content mentioned anywhere in the pages shown: sustainability commitments or targets (e.g. net zero dates, emissions reduction goals), ESG ratings or scores if explicitly stated (e.g. "MSCI AA", "CDP A-", "Sustainalytics score"), governance highlights (board composition, diversity disclosures), and any controversies, litigation, or ESG-related risks mentioned. Populate esg_snapshot.summary with a 2-3 sentence overview of the company's ESG positioning based only on what's in these pages. Populate esg_snapshot.highlights with 2-5 short bullets (each tagged with a page number where possible). Populate esg_snapshot.ratings_mentioned with any explicitly stated third-party ESG ratings/scores (empty array if none). If no ESG content is found in the pages shown, say so explicitly in summary rather than leaving it sparse — do not infer or estimate ESG performance that isn't explicitly stated.
+15. company_business_description: 1-2 sentence summary of overall products/services, from the business overview section if present.${snapshotRules}
 18. Never invent numbers, segment names, products, or business/ESG events. If uncertain, exclude and note the uncertainty in data_gaps.
 19. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
 {
@@ -328,23 +337,23 @@ RULES:
  "company_business_description": string|null,
  "segment_disclosure": {"basis": "formal_business_segments|single_reportable_segment|product_category_disaggregation|geographic_only|not_found", "explanation": string},
  "reconciliation_note": string|null,
- "segments": [{"segment_name": string, "segment_description": string, "products": [string], "revenue_value": number|null, "currency": string|null, "disclosure_type": "exact|aggregated|not_disclosed", "segment_type": "business|geographic|reconciling_item", "page": number|null, "source_quote": string|null}],
- "company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]},
- "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]},
+ "segments": [{"segment_name": string, "segment_description": string, "products": [string], "revenue_value": number|null, "currency": string|null, "disclosure_type": "exact|aggregated|not_disclosed", "segment_type": "business|geographic|reconciling_item", "page": number|null, "source_quote": string|null}],${snapshotSchema}
  "data_gaps": [string]
 }`;
+  }
 
-  const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to BOTH NAICS codes (2022 NAICS US structure) AND GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
+  const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
 RULES:
 1. You will be given each segment's full product/service list, not just a short description — use this list as the primary basis for classification, not just the general description.
-2. For each segment, if its full product list clearly represents a single coherent business line/industry, assign one NAICS code and one GICS code, each at 100%, tier "1_exact".
-3. If the products span multiple distinct industries, propose 2-4 NAICS codes AND 2-4 GICS codes (each classification's percentages summing to 100 independently), allocating percentage weight based on how many of the listed products fall under each code and their apparent relative significance. Tier "2_estimated_clear" if the product list gives enough detail to allocate with reasonable confidence, "3_estimated_limited" if the product list is sparse or vague.
+2. For each segment, if its full product list clearly represents a single coherent business line/industry, assign one GICS code at 100%, tier "1_exact".
+3. If the products span multiple distinct industries, propose 2-4 GICS codes (percentages summing to 100), allocating percentage weight based on how many of the listed products fall under each code and their apparent relative significance. Tier "2_estimated_clear" if the product list gives enough detail to allocate with reasonable confidence, "3_estimated_limited" if the product list is sparse or vague.
 4. estimation_logic: explain WHY you split the segment the way you did, explicitly referencing which specific products drove which percentage (e.g. "60% Software given 3 of 5 listed products are enterprise software; 40% Hardware for the remaining 2 hardware products"). This must be a substantive explanation, not a generic restatement of the tier.
-5. For every individual allocation (in both naics_allocations and gics_allocations), include key_products: the specific product/service names from the segment's product list that justify that code and percentage — do not invent products not in the provided list.
+5. For every individual allocation, include key_products: the specific product/service names from the segment's product list that justify that code and percentage — do not invent products not in the provided list.
 6. If the segment's product list was sparse (noted in data_gaps by the extraction step) and you are given supplementary web search results, you may use them to identify likely products for that segment — if you do, set source_link to the URL you drew from and note in estimation_logic that web research supplemented the filing's own disclosure. If no web results are provided and the product list is sparse, classify at tier "3_estimated_limited" based on the segment name and general description alone, and say so in estimation_logic.
-7. Use the most specific code level you can justify in each system.
+7. Use the most specific GICS level you can justify.
 8. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
-{"segment_mappings": [{"segment_name": string, "tier": "1_exact|2_estimated_clear|3_estimated_limited", "estimation_logic": string, "source_link": string|null, "naics_allocations": [{"code": string, "title": string, "percent": number, "key_products": [string]}], "gics_allocations": [{"code": string, "title": string, "percent": number, "key_products": [string]}]}]}`;
+{"segment_mappings": [{"segment_name": string, "tier": "1_exact|2_estimated_clear|3_estimated_limited", "estimation_logic": string, "source_link": string|null, "gics_allocations": [{"code": string, "title": string, "percent": number, "key_products": [string]}]}]}`;
+
 
   const GICS_SECTOR_SYSTEM = `You are an industry classification specialist determining a company's overall GICS Sector and Industry Group (the two broadest levels of the GICS hierarchy: Sector > Industry Group > Industry > Sub-Industry), based on its segments' revenue and their sub-industry classifications already determined.
 RULES:
@@ -356,14 +365,14 @@ RULES:
 
   function log(company, msg) { company.log.push(msg); renderAll(); }
 
-  async function scanAndSelectPages(pdf, maxPages) {
+  async function scanAndSelectPages(pdf, maxPages, keywords) {
     const total = pdf.numPages;
     const scored = [];
     for (let i = 1; i <= total; i++) {
       const page = await pdf.getPage(i);
       const tc = await page.getTextContent();
       const pageText = tc.items.map(it => it.str).join(" ");
-      const matches = pageText.match(KEYWORDS);
+      const matches = pageText.match(keywords);
       scored.push({ page: i, score: matches ? matches.length : 0 });
     }
     let selected = scored.filter(s => s.score > 0).sort((a,b) => a.page - b.page);
@@ -464,8 +473,10 @@ RULES:
       log(company, "Loading PDF...");
       const buf = await company.file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content...`);
-      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 32);
+      const includeSnapshots = localStorage.getItem("include_snapshots") === "true";
+      const extractionSystem = buildExtractionSystem(includeSnapshots);
+      log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content${includeSnapshots ? " + business/ESG snapshot signals" : ""}...`);
+      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 32, getKeywords(includeSnapshots));
       log(company, `Found ${selected.length} relevant page(s) out of ${total}: ${selected.join(", ")}`);
 
       const readBatches = async (pages, label) => {
@@ -482,7 +493,7 @@ RULES:
           }
           content.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nFiscal year: ${company.year||"Unknown"}\nExtract total revenue and all segments per the schema from the pages shown above.` });
           try {
-            const partial = await callClaudeWithRetry(EXTRACTION_SYSTEM, content, 2, { max_tokens: 2200 });
+            const partial = await callClaudeWithRetry(extractionSystem, content, 2, { max_tokens: 2200 });
             m = mergeExtractions(m, partial);
           } catch (batchErr) {
             log(company, `⚠ ${label} batch ${Math.floor(i/batchSize)+1} failed to parse (${batchErr.message}) — skipping.`);
@@ -560,7 +571,7 @@ RULES:
     renderAll();
     const segs = company.extraction.segments;
     const useWebLookup = el("webLookupToggle") && el("webLookupToggle").checked;
-    const chunkSize = 2; // smaller than before — dual NAICS+GICS output with key products is more verbose per segment
+    const chunkSize = 3; // GICS-only now (NAICS removed) — lighter output per segment allows slightly larger batches, cutting repeated system-prompt overhead
     for (let i = 0; i < segs.length; i += chunkSize) {
       const chunk = segs.slice(i, i + chunkSize);
       try {
@@ -601,7 +612,7 @@ RULES:
 
   async function retrySegmentMapping(company, segIndex) {
     const s = company.extraction.segments[segIndex];
-    company.mapped[normalizeName(s.segment_name)] = { tier:"pending", estimation_logic:"Retrying...", naics_allocations:[], gics_allocations:[] };
+    company.mapped[normalizeName(s.segment_name)] = { tier:"pending", estimation_logic:"Retrying...", gics_allocations:[] };
     renderAll();
     try {
       const content = [{ type:"text", text: `Segment to classify:\n${JSON.stringify({segment_name:s.segment_name, segment_description:s.segment_description})}` }];
@@ -633,7 +644,6 @@ RULES:
       el("errorBox").textContent = "No extracted data yet — process at least one company first.";
       return;
     }
-    const naicsRows = [];
     const gicsRows = [];
     const summaryRows = [];
     const snapshotRows = [];
@@ -702,10 +712,6 @@ RULES:
           "Source Page": s.page || "",
           "Source Quote": s.source_quote || ""
         };
-        const naicsAllocs = (m && Array.isArray(m.naics_allocations) && m.naics_allocations.length) ? m.naics_allocations : [{code:"", title:"", percent:"", key_products:[]}];
-        for (const a of naicsAllocs) {
-          naicsRows.push({ ...baseRow, "NAICS Code": a.code || "", "NAICS Title": a.title || "", "Allocation %": a.percent != null ? a.percent : "", "Key Products/Activities": (a.key_products||[]).join("; ") });
-        }
         const gicsAllocs = (m && Array.isArray(m.gics_allocations) && m.gics_allocations.length) ? m.gics_allocations : [{code:"", title:"", percent:"", key_products:[]}];
         for (const a of gicsAllocs) {
           gicsRows.push({ ...baseRow, "GICS Code": a.code || "", "GICS Title": a.title || "", "Allocation %": a.percent != null ? a.percent : "", "Key Products/Activities": (a.key_products||[]).join("; ") });
@@ -715,7 +721,6 @@ RULES:
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Company Summary");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(snapshotRows), "Company Snapshot");
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(naicsRows), "NAICS Mapping");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gicsRows), "GICS Mapping");
     XLSX.writeFile(wb, "segment-revenue-naics-gics-export.xlsx");
   }
@@ -805,6 +810,10 @@ RULES:
           <input type="checkbox" id="webLookupToggle" ${localStorage.getItem("web_lookup_enabled")==="true"?"checked":""} style="width:auto;" />
           Use web search to fill gaps when a segment's product list is sparse
         </label>
+        <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--muted); cursor:pointer;">
+          <input type="checkbox" id="snapshotToggle" ${localStorage.getItem("include_snapshots")==="true"?"checked":""} style="width:auto;" />
+          Include Company Snapshot &amp; ESG Snapshot (adds extra scanned pages + cost per company — off by default to keep cost down)
+        </label>
       </div>
     `;
     el("advToggle").addEventListener("click", () => {
@@ -818,6 +827,7 @@ RULES:
     });
     el("apiKeyIn").type = "password"; // masked by default; the eye toggle above reveals it on demand
     el("webLookupToggle").addEventListener("change", (e) => localStorage.setItem("web_lookup_enabled", e.target.checked ? "true" : "false"));
+    el("snapshotToggle").addEventListener("change", (e) => localStorage.setItem("include_snapshots", e.target.checked ? "true" : "false"));
     el("rateLimitIn").addEventListener("change", (e) => localStorage.setItem("rate_limit_ms", String(Math.max(0, parseInt(e.target.value,10) || 0))));
     el("dailyLimitIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
     el("saveKeyBtn").addEventListener("click", () => {
@@ -862,7 +872,6 @@ RULES:
       else if (m.tier === "pending") { tierClass = "est"; tierLabel = "Retrying..."; }
       else { tierClass = "est"; tierLabel = ({ "2_estimated_clear":"Estimated (clear)", "3_estimated_limited":"Estimated (limited)" }[m.tier] || m.tier); }
     }
-    const naicsAllocations = (m && Array.isArray(m.naics_allocations)) ? m.naics_allocations : [];
     const gicsAllocations = (m && Array.isArray(m.gics_allocations)) ? m.gics_allocations : [];
     const needsRetry = m && m.tier === "unmapped_needs_review";
     const isConsolidated = s.segment_type === "consolidated";
@@ -880,7 +889,6 @@ RULES:
           ${s.products && s.products.length ? `<div class="label" style="margin-top:8px;">Products / services under this segment</div><div class="seg-desc" style="margin-bottom:10px;">${s.products.join(" • ")}</div>` : ""}
           ${m && m.estimation_logic ? `<div class="quote" style="font-style:normal;color:var(--muted);margin-bottom:6px;"><b>Estimation logic:</b> ${m.estimation_logic}</div>` : ""}
           ${m && m.source_link ? `<div class="quote" style="margin-bottom:6px;">Supplemented via web search: <a href="${m.source_link}" target="_blank" style="color:var(--teal-dark);">${m.source_link}</a></div>` : ""}
-          ${allocBlockHtml("naics", naicsAllocations)}
           ${allocBlockHtml("gics", gicsAllocations)}
           ${needsRetry ? `<button class="add-alloc" data-retry style="color:#A6740B;">↻ Retry mapping</button>` : ""}
           ${s.source_quote || s.page ? `<div class="quote">${s.page ? `Page ${s.page}` : ""}${s.page && s.source_quote ? " — " : ""}${s.source_quote ? `"${s.source_quote}"` : ""}</div>` : ""}
@@ -992,7 +1000,7 @@ RULES:
         ${snapshotHtml(company)}
         ${esgSnapshotHtml(company)}
         ${reconciliationHtml(company)}
-        ${company.mapping ? `<div class="panel" style="text-align:center; color:var(--muted);"><span class="spin"></span> Mapping segments to NAICS + GICS codes...</div>` :
+        ${company.mapping ? `<div class="panel" style="text-align:center; color:var(--muted);"><span class="spin"></span> Mapping segments to GICS codes...</div>` :
           (company.extraction ? company.extraction.segments.map((s,si) => segmentCardHtml(company, s, si)).join("") : "")}
       </div>
     </div>`;
