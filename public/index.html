@@ -129,7 +129,7 @@
   pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
   const CORE_KEYWORDS = /segment|segmental|reportable segment|operating segment|single (reportable|operating) segment|one (reportable|operating) segment|net (sales|revenue)|total net (sales|revenue)|net turnover|turnover|total income|business unit|naics|revenue by (segment|category|division|product)|product categor|revenue stream|disaggregat|consolidated statements? of (operations|income)|consolidated income statement|total revenue|corporate.{0,10}(eliminations|other|unallocated)|divisional (performance|results|revenue)|by (division|category|reportable segment|product)/i;
-  const SNAPSHOT_KEYWORDS = /divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments|sustainab|\bESG\b|net zero|net-zero|carbon neutral|emissions? (target|reduction|goal)|MSCI|CDP\b|sustainalytics|board (composition|diversity)|governance|materiality|controvers/i;
+  const SNAPSHOT_KEYWORDS = /divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments/i;
   const HIGH_PRIORITY_KEYWORDS = /consolidated statements? of operations|consolidated income statement|consolidated statements? of income|total (net )?revenue/i;
   const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // gemini-2.5-flash-lite and gemini-2.5-flash are both retired for new usage. 3.1 Flash-Lite (~$0.25/$1.50 per 1M tokens) is the current cheap tier. Check ai.google.dev/gemini-api/docs/models if this also becomes stale.
 
@@ -336,13 +336,12 @@ RULES:
   // Compact, standalone prompt for the optional snapshot pass — deliberately separate from the core
   // extraction prompt so the core segment/revenue extraction never carries this overhead, regardless
   // of whether snapshots are enabled. Only runs against a small, tightly-capped set of pages.
-  const SNAPSHOT_SYSTEM = `You are a financial disclosure analyst. You are shown selected page images from a company's annual report (each preceded by its page number), pre-filtered for likely business-change and ESG content.
+  const SNAPSHOT_SYSTEM = `You are a financial disclosure analyst. You are shown selected page images from a company's annual report (each preceded by its page number), pre-filtered for likely business-change content.
 RULES:
 1. company_snapshot_brief: ONE to TWO sentences maximum covering any divestitures, acquisitions, discontinued operations, segment renames/restructuring, or spin-offs mentioned — name the event and page number inline (e.g. "Divested the XYZ division in FY24 (p.12); no other structural changes noted."). If nothing found, write exactly "No notable business changes found in the scanned pages."
-2. esg_snapshot_brief: ONE to TWO sentences maximum covering sustainability targets, any explicitly stated third-party ESG ratings, governance highlights, or controversies — name specifics and page numbers inline. If nothing found, write exactly "No ESG content found in the scanned pages."
-3. Never invent facts, never exceed two sentences per field — brevity is the point.
-4. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
-{"company_snapshot_brief": string, "esg_snapshot_brief": string}`;
+2. Never invent facts, never exceed two sentences — brevity is the point.
+3. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{"company_snapshot_brief": string}`;
 
   const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
 RULES:
@@ -442,7 +441,6 @@ RULES:
       segMap.set(key, mergeSegmentEntry(segMap.get(key), s));
     }
     const snapBrief = (a.company_snapshot_brief && a.company_snapshot_brief.length > (b.company_snapshot_brief||"").length) ? a.company_snapshot_brief : (b.company_snapshot_brief || a.company_snapshot_brief || null);
-    const esgBrief = (a.esg_snapshot_brief && a.esg_snapshot_brief.length > (b.esg_snapshot_brief||"").length) ? a.esg_snapshot_brief : (b.esg_snapshot_brief || a.esg_snapshot_brief || null);
     return {
       company_total_revenue: totalRev,
       company_business_description: bizDesc,
@@ -450,7 +448,6 @@ RULES:
       reconciliation_note: reconNote,
       segments: Array.from(segMap.values()),
       company_snapshot_brief: snapBrief,
-      esg_snapshot_brief: esgBrief,
       data_gaps: [...(a.data_gaps||[]), ...(b.data_gaps||[])].filter((v,i,arr)=>arr.indexOf(v)===i)
     };
   }
@@ -568,7 +565,7 @@ RULES:
               snapContent.push({ type:"text", text:`Page ${p}:` });
               snapContent.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
             }
-            snapContent.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nExtract the company and ESG snapshot per the schema from the pages shown above.` });
+            snapContent.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nExtract the company snapshot per the schema from the pages shown above.` });
             const snapResult = await callClaudeWithRetry(SNAPSHOT_SYSTEM, snapContent, 2, { max_tokens: 300 });
             merged = mergeExtractions(merged, snapResult);
           } else {
@@ -705,9 +702,6 @@ RULES:
       });
       if (c.extraction.company_snapshot_brief) {
         snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Detail: c.extraction.company_snapshot_brief });
-      }
-      if (c.extraction.esg_snapshot_brief) {
-        snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Detail: c.extraction.esg_snapshot_brief });
       }
       for (const s of c.extraction.segments) {
         const m = findMapping(c, s.segment_name);
@@ -934,16 +928,6 @@ RULES:
       </div>`;
   }
 
-  function esgSnapshotHtml(company) {
-    const brief = company.extraction && company.extraction.esg_snapshot_brief;
-    if (!brief) return "";
-    return `
-      <div class="panel" style="border-color:var(--teal-dark); background:var(--teal-bg);">
-        <div class="label" style="margin-bottom:6px; color:var(--teal-dark);">🌱 ESG snapshot</div>
-        <div class="seg-desc">${brief}</div>
-      </div>`;
-  }
-
   function gicsSectorBadge(company) {
     if (!company.gicsSector) return "";
     return `<span class="company-status done" title="${company.gicsSector.rationale||""}">GICS: ${company.gicsSector.sector} — ${company.gicsSector.industry_group}</span>`;
@@ -977,7 +961,7 @@ RULES:
         ${company.file ? `<div class="filepill">📎 ${company.file.name}<button class="remove-file">remove</button></div>` : ""}
         <label style="display:flex; align-items:center; gap:8px; margin:8px 0 4px; font-size:12px; color:var(--muted); cursor:pointer;">
           <input type="checkbox" class="snapshot-check" ${company.includeSnapshot ? "checked" : ""} style="width:auto;" />
-          Include brief Company &amp; ESG snapshot (small extra cost, 1-2 lines each)
+          Include brief Company snapshot
         </label>
         ${company.log.length ? `<div class="progress-log">${company.log.map(l=>"> "+l).join("<br>")}</div>` : ""}
         ${company.error ? `<div class="error-msg">${company.error}</div>` : ""}
@@ -991,7 +975,6 @@ RULES:
         })() : ""}
         ${company.extraction && company.extraction.consolidation_note ? `<div class="panel" style="border-color:var(--amber-dark); background:var(--amber-bg); color:var(--amber-dark); font-size:12px; font-weight:600;">📍 ${company.extraction.consolidation_note}</div>` : ""}
         ${snapshotHtml(company)}
-        ${esgSnapshotHtml(company)}
         ${reconciliationHtml(company)}
         ${company.mapping ? `<div class="panel" style="text-align:center; color:var(--muted);"><span class="spin"></span> Mapping segments to GICS codes...</div>` :
           (company.extraction ? company.extraction.segments.map((s,si) => segmentCardHtml(company, s, si)).join("") : "")}
