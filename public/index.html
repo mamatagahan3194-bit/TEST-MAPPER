@@ -130,9 +130,6 @@
 
   const CORE_KEYWORDS = /segment|segmental|reportable segment|operating segment|single (reportable|operating) segment|one (reportable|operating) segment|net (sales|revenue)|total net (sales|revenue)|net turnover|turnover|total income|business unit|naics|revenue by (segment|category|division|product)|product categor|revenue stream|disaggregat|consolidated statements? of (operations|income)|consolidated income statement|total revenue|corporate.{0,10}(eliminations|other|unallocated)|divisional (performance|results|revenue)|by (division|category|reportable segment|product)/i;
   const SNAPSHOT_KEYWORDS = /divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments|sustainab|\bESG\b|net zero|net-zero|carbon neutral|emissions? (target|reduction|goal)|MSCI|CDP\b|sustainalytics|board (composition|diversity)|governance|materiality|controvers/i;
-  function getKeywords(includeSnapshots) {
-    return includeSnapshots ? new RegExp(CORE_KEYWORDS.source + "|" + SNAPSHOT_KEYWORDS.source, "i") : CORE_KEYWORDS;
-  }
   const HIGH_PRIORITY_KEYWORDS = /consolidated statements? of operations|consolidated income statement|consolidated statements? of income|total (net )?revenue/i;
   const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // gemini-2.5-flash-lite and gemini-2.5-flash are both retired for new usage. 3.1 Flash-Lite (~$0.25/$1.50 per 1M tokens) is the current cheap tier. Check ai.google.dev/gemini-api/docs/models if this also becomes stale.
 
@@ -300,18 +297,12 @@
     return null;
   }
 
-  function buildExtractionSystem(includeSnapshots) {
-    const snapshotRules = includeSnapshots ? `
-16. COMPANY SNAPSHOT — scan for and summarize any of the following if mentioned anywhere in the pages shown: divestitures/disposals, acquisitions, discontinued operations, new segments added, segments renamed/restructured, spin-offs, major strategic changes. Populate company_snapshot.business_changes with one entry per event (type, description, page, source_quote). Populate company_snapshot.key_highlights with 2-5 short bullets on notable developments an analyst should know. Populate company_snapshot.summary with a 2-3 sentence overview of where the company stands. If none found, say so explicitly rather than leaving it sparse — do not fabricate events.
-17. ESG SNAPSHOT — scan for and summarize any ESG-relevant content mentioned anywhere in the pages shown: sustainability commitments or targets (e.g. net zero dates, emissions reduction goals), ESG ratings or scores if explicitly stated (e.g. "MSCI AA", "CDP A-", "Sustainalytics score"), governance highlights (board composition, diversity disclosures), and any controversies, litigation, or ESG-related risks mentioned. Populate esg_snapshot.summary with a 2-3 sentence overview of the company's ESG positioning based only on what's in these pages. Populate esg_snapshot.highlights with 2-5 short bullets (each tagged with a page number where possible). Populate esg_snapshot.ratings_mentioned with any explicitly stated third-party ESG ratings/scores (empty array if none). If no ESG content is found in the pages shown, say so explicitly in summary rather than leaving it sparse — do not infer or estimate ESG performance that isn't explicitly stated.` : "";
-    const snapshotSchema = includeSnapshots ? `
- "company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]},
- "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]},` : "";
+  function buildExtractionSystem() {
     return `You are a financial disclosure extraction specialist. Accuracy is critical — this data is used for analyst review. Past errors have included: mismatched segment/total revenue, segments incorrectly marked as not disclosed when a figure was actually present, and — most seriously — fabricated segments where a product or brand name mentioned in narrative/marketing text (e.g. "Veet bikini") was invented as if it were an official reportable segment. You are shown selected page images from a company's annual report / 10-K (each preceded by its page number).
 RULES:
 1. FIRST, DETERMINE THE SEGMENTATION BASIS available in this filing, in this priority order, and record it in segment_disclosure:
    a. "formal_business_segments" — the company explicitly states its reportable business/product segments (e.g. "The Group is organised into N segments/divisions: A, B, C") or has a formal segment/segmental note broken out by business line. This is the preferred basis whenever it exists.
-   b. "single_reportable_segment" — the company explicitly states it operates as a single reportable/operating segment (common phrasing: "The Group operates as one operating segment", "management reviews the business as a whole"). This is a valid, common disclosure — not a data gap. If found, create one segment entry representing the whole company, using company_total_revenue as its revenue.
+   b. "single_reportable_segment" — the company explicitly states it operates as a single reportable/operating segment (common phrasing: "The Group operates as one operating segment", "management reviews the business as a whole"). This is a valid, common disclosure — not a data gap. If found, create exactly ONE segment entry representing the whole company, named exactly "Operations" (not the company's name or any other label), using company_total_revenue as its revenue.
    c. "product_category_disaggregation" — no formal business segments exist, but the company provides an IFRS 15 / ASC 606-style "disaggregation of revenue" table breaking revenue down by product category, product line, or revenue stream (common even for single-segment companies). If this is the only breakdown available, use each product category row as a segment entry (segment_type "business"), since it is still a legitimate basis for industry classification even though it isn't a formal reportable segment.
    d. "geographic_only" — LAST RESORT ONLY: no business/product breakdown of any kind exists, and the ONLY breakdown disclosed is by region/country. Use this only when (a), (b), and (c) are all genuinely absent from the pages shown.
    e. "not_found" — no segmentation or revenue breakdown of any kind was found in the pages shown.
@@ -329,18 +320,29 @@ RULES:
 12. Every figure (company_total_revenue and every segment) MUST include the exact page number it was read from (the "Page N:" label shown with that image). Mandatory for verification.
 13. disclosure_type per segment: "exact" (clean single-line figure), "aggregated" (bundles multiple lines), or "not_disclosed" (per rule 11).
 14. segment_type per segment: "business" (includes product-category-disaggregation rows and the single-segment case), "geographic" (only per rule 1d), or "reconciling_item" (per rule 5).
-15. company_business_description: 1-2 sentence summary of overall products/services, from the business overview section if present.${snapshotRules}
-18. Never invent numbers, segment names, products, or business/ESG events. If uncertain, exclude and note the uncertainty in data_gaps.
-19. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+15. company_business_description: 1-2 sentence summary of overall products/services, from the business overview section if present.
+16. Never invent numbers, segment names, products, or business events. If uncertain, exclude and note the uncertainty in data_gaps.
+17. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
 {
  "company_total_revenue": {"value": number|null, "currency": string|null, "page": number|null, "source_quote": string|null},
  "company_business_description": string|null,
  "segment_disclosure": {"basis": "formal_business_segments|single_reportable_segment|product_category_disaggregation|geographic_only|not_found", "explanation": string},
  "reconciliation_note": string|null,
- "segments": [{"segment_name": string, "segment_description": string, "products": [string], "revenue_value": number|null, "currency": string|null, "disclosure_type": "exact|aggregated|not_disclosed", "segment_type": "business|geographic|reconciling_item", "page": number|null, "source_quote": string|null}],${snapshotSchema}
+ "segments": [{"segment_name": string, "segment_description": string, "products": [string], "revenue_value": number|null, "currency": string|null, "disclosure_type": "exact|aggregated|not_disclosed", "segment_type": "business|geographic|reconciling_item", "page": number|null, "source_quote": string|null}],
  "data_gaps": [string]
 }`;
   }
+
+  // Compact, standalone prompt for the optional snapshot pass — deliberately separate from the core
+  // extraction prompt so the core segment/revenue extraction never carries this overhead, regardless
+  // of whether snapshots are enabled. Only runs against a small, tightly-capped set of pages.
+  const SNAPSHOT_SYSTEM = `You are a financial disclosure analyst. You are shown selected page images from a company's annual report (each preceded by its page number), pre-filtered for likely business-change and ESG content.
+RULES:
+1. COMPANY SNAPSHOT: note any divestitures, acquisitions, discontinued operations, new/renamed/restructured segments, or spin-offs mentioned. One entry per event (type, brief description, page, short source quote). Add 2-5 short highlight bullets on notable developments. One 2-3 sentence overall summary. If nothing found, say so in summary — do not invent events.
+2. ESG SNAPSHOT: note sustainability targets/commitments, any explicitly stated third-party ESG ratings, governance highlights, and controversies/risks mentioned. 2-5 short highlight bullets, each with a page number where possible. List any explicit ratings mentioned. One 2-3 sentence summary. If nothing found, say so — do not infer or estimate.
+3. Never invent facts. Keep every field brief — this is a quick-reference snapshot, not a full report.
+4. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{"company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]}, "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]}}`;
 
   const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
 RULES:
@@ -476,9 +478,9 @@ RULES:
       const buf = await company.file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
       const includeSnapshots = localStorage.getItem("include_snapshots") === "true";
-      const extractionSystem = buildExtractionSystem(includeSnapshots);
-      log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content${includeSnapshots ? " + business/ESG snapshot signals" : ""}...`);
-      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 24, getKeywords(includeSnapshots)); // reduced from 32 to cut input cost — scanner already prioritizes highest-relevance pages first
+      const extractionSystem = buildExtractionSystem();
+      log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content...`);
+      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 24, CORE_KEYWORDS); // core scan always stays lean, regardless of the snapshot toggle
       log(company, `Found ${selected.length} relevant page(s) out of ${total}: ${selected.join(", ")}`);
 
       const readBatches = async (pages, label) => {
@@ -544,6 +546,37 @@ RULES:
           segment_type: "consolidated",
           source_quote: null
         }];
+      }
+
+      // If the filing states the company operates as a single reportable segment, guarantee the naming
+      // is consistent ("Operations") regardless of what the model actually called it — don't rely on
+      // the prompt instruction alone.
+      if (merged.segment_disclosure && merged.segment_disclosure.basis === "single_reportable_segment" && merged.segments.length === 1) {
+        merged.segments[0].segment_name = "Operations";
+      }
+
+      // Optional snapshot pass — deliberately separate from core extraction and tightly capped, so this
+      // never bloats the main segment/revenue calls. Only a handful of pages typically carry this content.
+      if (includeSnapshots) {
+        try {
+          const { selected: snapPages } = await scanAndSelectPages(pdf, 6, SNAPSHOT_KEYWORDS);
+          if (snapPages.length > 0) {
+            log(company, `Reading snapshot pass (pages ${snapPages.join(", ")})...`);
+            const snapContent = [];
+            for (const p of snapPages) {
+              const b64 = await renderPageToBase64(pdf, p, 1.8);
+              snapContent.push({ type:"text", text:`Page ${p}:` });
+              snapContent.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+            }
+            snapContent.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nExtract the company and ESG snapshot per the schema from the pages shown above.` });
+            const snapResult = await callClaudeWithRetry(SNAPSHOT_SYSTEM, snapContent, 2, { max_tokens: 900 });
+            merged = mergeExtractions(merged, snapResult);
+          } else {
+            log(company, "No snapshot-relevant pages found — skipping snapshot pass.");
+          }
+        } catch (snapErr) {
+          log(company, `⚠ Snapshot pass failed (${snapErr.message}) — continuing without it.`);
+        }
       }
 
       company.extraction = merged;
@@ -814,7 +847,7 @@ RULES:
         </label>
         <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--muted); cursor:pointer;">
           <input type="checkbox" id="snapshotToggle" ${localStorage.getItem("include_snapshots")==="true"?"checked":""} style="width:auto;" />
-          Include Company Snapshot &amp; ESG Snapshot (adds extra scanned pages + cost per company — off by default to keep cost down)
+          Include Company Snapshot &amp; ESG Snapshot (adds one small extra pass, capped at 6 pages — off by default to keep cost down)
         </label>
       </div>
     `;
