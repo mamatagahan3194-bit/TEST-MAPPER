@@ -80,9 +80,24 @@
   .company-status.error { color:var(--red); border-color:var(--red-dark); background:var(--red-bg); }
   .company-body { padding:16px; }
   .toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; align-items:center; }
+  #loginGate { display:none; min-height:100vh; background:var(--bg); align-items:center; justify-content:center; padding:24px; }
+  #loginGate .login-card { max-width:360px; width:100%; background:var(--panel); border:1px solid var(--border); border-radius:12px; padding:28px; box-shadow:0 4px 16px rgba(34,29,23,0.08); }
 </style>
 
-<div id="rev-root">
+<div id="loginGate">
+  <div class="login-card">
+    <div class="brand" style="margin-bottom:4px;">💵 REVENUE LEDGER 001</div>
+    <h1 style="font-size:18px; margin-bottom:16px;">Sign in</h1>
+    <label class="label">Your name</label>
+    <input type="text" id="loginName" placeholder="e.g. Priya Sharma" style="margin-bottom:12px;" />
+    <label class="label">Team password</label>
+    <input type="password" id="loginPassword" placeholder="Enter password" style="margin-bottom:16px;" />
+    <button class="primary" id="loginSubmit" style="width:100%;">Enter</button>
+    <div id="loginError" style="color:var(--red); font-size:12px; margin-top:10px;"></div>
+  </div>
+</div>
+
+<div id="rev-root" style="display:none;">
   <div class="wrap">
     <div class="header">
       <div>
@@ -140,16 +155,21 @@
   // realistic risk of accidental/random discovery.
   const ACCESS_CODE = "oG3xFnmggw1AeTCsfz2Z5lDT1yLqE_3y";
 
-  // Lightweight, honor-system user tagging — not real authentication, but gives the server-side
-  // daily limit a per-person bucket to count against (instead of one shared count for everyone),
-  // and gives you basic "who ran what" visibility. Asked once per browser.
+  // Shared team login — SHA-256 hash of the password, so the plaintext never sits in the source.
+  // Gates the entire tool, not just admin settings — everyone using this needs name + this password.
+  const SITE_PASSWORD_HASH = "61a3ebad56cdba963e69b51490ceb61b93177d9f99314cdeffa0e570c44dfc37";
+
+  async function sha256Hex(text) {
+    const enc = new TextEncoder().encode(text);
+    const digest = await crypto.subtle.digest("SHA-256", enc);
+    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // Name is now collected once at the login gate (see checkSiteLogin), not via a separate prompt —
+  // this just reads what was stored there. Still honor-system, not real per-user authentication, but
+  // gives the server-side daily limit a per-person bucket instead of one shared count for everyone.
   function getUserId() {
-    let id = localStorage.getItem("user_id");
-    if (!id) {
-      id = (window.prompt("Enter your name (used to track your own daily usage — asked once):") || "unknown").trim().slice(0, 60) || "unknown";
-      localStorage.setItem("user_id", id);
-    }
-    return id;
+    return localStorage.getItem("user_id") || "unknown";
   }
 
   // Daily usage quota — a soft per-browser limit, not a hard security boundary (someone could clear
@@ -759,12 +779,6 @@ RULES:
 
   const ADMIN_PASSWORD_HASH = "f9bcb857b9be5f634c52620d4456dae56e8bbb4b41f3431d8a9d4d8be53abe78"; // SHA-256 hash — plaintext password never appears in source
 
-  async function sha256Hex(text) {
-    const enc = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest("SHA-256", enc);
-    return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, "0")).join("");
-  }
-
   function isAdmin() {
     return sessionStorage.getItem("is_admin") === "true";
   }
@@ -1094,12 +1108,48 @@ RULES:
     }
   }
 
-  el("addCompanyBtn").addEventListener("click", () => { state.companies.push(newCompany()); renderAll(); });
-  el("processAllBtn").addEventListener("click", processAll);
-  el("exportBtn").addEventListener("click", exportToExcel);
+  function initApp() {
+    el("addCompanyBtn").addEventListener("click", () => { state.companies.push(newCompany()); renderAll(); });
+    el("processAllBtn").addEventListener("click", processAll);
+    el("exportBtn").addEventListener("click", exportToExcel);
 
-  state.companies.push(newCompany());
-  renderApiKeyPanel();
-  renderAll();
+    state.companies.push(newCompany());
+    renderApiKeyPanel();
+    renderAll();
+  }
+
+  function showApp() {
+    el("loginGate").style.display = "none";
+    el("rev-root").style.display = "block";
+    initApp();
+  }
+
+  function checkSiteLogin() {
+    if (localStorage.getItem("site_authenticated") === "true" && localStorage.getItem("user_id")) {
+      showApp();
+      return;
+    }
+    el("loginGate").style.display = "flex";
+    el("rev-root").style.display = "none";
+    el("loginSubmit").addEventListener("click", async () => {
+      const name = el("loginName").value.trim().slice(0, 60);
+      const pw = el("loginPassword").value;
+      const errBox = el("loginError");
+      errBox.textContent = "";
+      if (!name) { errBox.textContent = "Please enter your name."; return; }
+      if (!pw) { errBox.textContent = "Please enter the password."; return; }
+      const hash = await sha256Hex(pw);
+      if (hash !== SITE_PASSWORD_HASH) { errBox.textContent = "Incorrect password."; return; }
+      localStorage.setItem("user_id", name);
+      localStorage.setItem("site_authenticated", "true");
+      showApp();
+    });
+    // Allow pressing Enter in either field to submit
+    ["loginName", "loginPassword"].forEach(id => {
+      el(id).addEventListener("keydown", (e) => { if (e.key === "Enter") el("loginSubmit").click(); });
+    });
+  }
+
+  checkSiteLogin();
 })();
 </script>
