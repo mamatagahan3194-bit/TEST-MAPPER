@@ -161,7 +161,7 @@
 
   function el(id){ return document.getElementById(id); }
   function newCompany() {
-    return { id: idCounter++, name:"", year:"", file:null, log:[], loading:false, mapping:false, extraction:null, mapped:null, gicsSector:null, error:null };
+    return { id: idCounter++, name:"", year:"", file:null, log:[], loading:false, mapping:false, extraction:null, mapped:null, gicsSector:null, error:null, includeSnapshot:false };
   }
 
   // The model occasionally puts a real line break inside a text field instead of an escaped \n,
@@ -338,11 +338,11 @@ RULES:
   // of whether snapshots are enabled. Only runs against a small, tightly-capped set of pages.
   const SNAPSHOT_SYSTEM = `You are a financial disclosure analyst. You are shown selected page images from a company's annual report (each preceded by its page number), pre-filtered for likely business-change and ESG content.
 RULES:
-1. COMPANY SNAPSHOT: note any divestitures, acquisitions, discontinued operations, new/renamed/restructured segments, or spin-offs mentioned. One entry per event (type, brief description, page, short source quote). Add 2-5 short highlight bullets on notable developments. One 2-3 sentence overall summary. If nothing found, say so in summary — do not invent events.
-2. ESG SNAPSHOT: note sustainability targets/commitments, any explicitly stated third-party ESG ratings, governance highlights, and controversies/risks mentioned. 2-5 short highlight bullets, each with a page number where possible. List any explicit ratings mentioned. One 2-3 sentence summary. If nothing found, say so — do not infer or estimate.
-3. Never invent facts. Keep every field brief — this is a quick-reference snapshot, not a full report.
+1. company_snapshot_brief: ONE to TWO sentences maximum covering any divestitures, acquisitions, discontinued operations, segment renames/restructuring, or spin-offs mentioned — name the event and page number inline (e.g. "Divested the XYZ division in FY24 (p.12); no other structural changes noted."). If nothing found, write exactly "No notable business changes found in the scanned pages."
+2. esg_snapshot_brief: ONE to TWO sentences maximum covering sustainability targets, any explicitly stated third-party ESG ratings, governance highlights, or controversies — name specifics and page numbers inline. If nothing found, write exactly "No ESG content found in the scanned pages."
+3. Never invent facts, never exceed two sentences per field — brevity is the point.
 4. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
-{"company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]}, "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]}}`;
+{"company_snapshot_brief": string, "esg_snapshot_brief": string}`;
 
   const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
 RULES:
@@ -441,24 +441,16 @@ RULES:
       const key = normalizeName(s.segment_name);
       segMap.set(key, mergeSegmentEntry(segMap.get(key), s));
     }
-    const hasSnapSource = !!(a.company_snapshot || b.company_snapshot);
-    const snapA = a.company_snapshot || {}, snapB = b.company_snapshot || {};
-    const changes = [...(snapA.business_changes||[]), ...(snapB.business_changes||[])].filter((v,i,arr)=>arr.findIndex(x=>x.description===v.description)===i);
-    const highlights = [...(snapA.key_highlights||[]), ...(snapB.key_highlights||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
-    const summary = (snapA.summary && snapA.summary.length > (snapB.summary||"").length) ? snapA.summary : (snapB.summary || snapA.summary || null);
-    const hasEsgSource = !!(a.esg_snapshot || b.esg_snapshot);
-    const esgA = a.esg_snapshot || {}, esgB = b.esg_snapshot || {};
-    const esgHighlights = [...(esgA.highlights||[]), ...(esgB.highlights||[])].filter((v,i,arr)=>arr.findIndex(x=>x.text===v.text)===i);
-    const esgRatings = [...(esgA.ratings_mentioned||[]), ...(esgB.ratings_mentioned||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
-    const esgSummary = (esgA.summary && esgA.summary.length > (esgB.summary||"").length) ? esgA.summary : (esgB.summary || esgA.summary || null);
+    const snapBrief = (a.company_snapshot_brief && a.company_snapshot_brief.length > (b.company_snapshot_brief||"").length) ? a.company_snapshot_brief : (b.company_snapshot_brief || a.company_snapshot_brief || null);
+    const esgBrief = (a.esg_snapshot_brief && a.esg_snapshot_brief.length > (b.esg_snapshot_brief||"").length) ? a.esg_snapshot_brief : (b.esg_snapshot_brief || a.esg_snapshot_brief || null);
     return {
       company_total_revenue: totalRev,
       company_business_description: bizDesc,
       segment_disclosure: segDisclosure,
       reconciliation_note: reconNote,
       segments: Array.from(segMap.values()),
-      company_snapshot: hasSnapSource ? { summary, business_changes: changes, key_highlights: highlights } : null,
-      esg_snapshot: hasEsgSource ? { summary: esgSummary, highlights: esgHighlights, ratings_mentioned: esgRatings } : null,
+      company_snapshot_brief: snapBrief,
+      esg_snapshot_brief: esgBrief,
       data_gaps: [...(a.data_gaps||[]), ...(b.data_gaps||[])].filter((v,i,arr)=>arr.indexOf(v)===i)
     };
   }
@@ -477,7 +469,7 @@ RULES:
       log(company, "Loading PDF...");
       const buf = await company.file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-      const includeSnapshots = localStorage.getItem("include_snapshots") === "true";
+      const includeSnapshots = company.includeSnapshot === true;
       const extractionSystem = buildExtractionSystem();
       log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content...`);
       const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 24, CORE_KEYWORDS); // core scan always stays lean, regardless of the snapshot toggle
@@ -509,12 +501,27 @@ RULES:
       let merged = await readBatches(selected, "primary");
       if (!merged) throw new Error("All batches failed — no data could be extracted.");
 
+      // If the filing already states the company operates as a single reportable segment, that's a
+      // complete, confirmed answer — force naming to "Operations" and guarantee its revenue equals the
+      // company total, regardless of what the model returned. Doing this BEFORE the fallback check lets
+      // us skip that expensive extra scan entirely for this case — there's nothing further to search for.
+      const isConfirmedSingleSegment = merged.segment_disclosure && merged.segment_disclosure.basis === "single_reportable_segment"
+        && merged.segments.length === 1 && merged.company_total_revenue && merged.company_total_revenue.value != null;
+      if (isConfirmedSingleSegment) {
+        merged.segments[0].segment_name = "Operations";
+        merged.segments[0].revenue_value = merged.company_total_revenue.value;
+        merged.segments[0].currency = merged.segments[0].currency || merged.company_total_revenue.currency;
+        merged.segments[0].disclosure_type = "exact";
+        log(company, "Company explicitly states it operates as a single reportable segment — no further page search needed. Mapping directly to GICS as \"Operations\".");
+      }
+
       // Priority order: consolidated statement + segment note first (above). If total revenue or any
       // segment's revenue still wasn't found, fall back to scanning further into the document rather
-      // than accepting an incomplete result.
+      // than accepting an incomplete result. Skipped entirely for a confirmed single-segment company —
+      // see above, since there is nothing left to find.
       const stillMissingTotal = !merged.company_total_revenue || merged.company_total_revenue.value == null;
       const stillMissingSegment = merged.segments.some(s => s.revenue_value == null);
-      if ((stillMissingTotal || stillMissingSegment) && remainingRanked.length > 0) {
+      if (!isConfirmedSingleSegment && (stillMissingTotal || stillMissingSegment) && remainingRanked.length > 0) {
         const extra = remainingRanked.slice(0, 10); // reduced from 20 — this fallback pass was nearly doubling cost when it triggered
         log(company, `Total or segment revenue not found in initial scan — expanding search to ${extra.length} more page(s) before giving up.`);
         const fallback = await readBatches(extra, "fallback");
@@ -548,13 +555,6 @@ RULES:
         }];
       }
 
-      // If the filing states the company operates as a single reportable segment, guarantee the naming
-      // is consistent ("Operations") regardless of what the model actually called it — don't rely on
-      // the prompt instruction alone.
-      if (merged.segment_disclosure && merged.segment_disclosure.basis === "single_reportable_segment" && merged.segments.length === 1) {
-        merged.segments[0].segment_name = "Operations";
-      }
-
       // Optional snapshot pass — deliberately separate from core extraction and tightly capped, so this
       // never bloats the main segment/revenue calls. Only a handful of pages typically carry this content.
       if (includeSnapshots) {
@@ -569,7 +569,7 @@ RULES:
               snapContent.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
             }
             snapContent.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nExtract the company and ESG snapshot per the schema from the pages shown above.` });
-            const snapResult = await callClaudeWithRetry(SNAPSHOT_SYSTEM, snapContent, 2, { max_tokens: 900 });
+            const snapResult = await callClaudeWithRetry(SNAPSHOT_SYSTEM, snapContent, 2, { max_tokens: 300 });
             merged = mergeExtractions(merged, snapResult);
           } else {
             log(company, "No snapshot-relevant pages found — skipping snapshot pass.");
@@ -703,31 +703,11 @@ RULES:
         "Consolidated (geographic segments)": c.extraction.consolidation_note ? "Yes" : "No",
         "Data Gaps": (c.extraction.data_gaps||[]).join("; ")
       });
-      const snap = c.extraction.company_snapshot;
-      if (snap && (snap.summary || (snap.business_changes||[]).length || (snap.key_highlights||[]).length)) {
-        snapshotRows.push({
-          Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business",
-          Type: "Summary", Detail: snap.summary || "", Page: "", Source: ""
-        });
-        for (const ch of (snap.business_changes||[])) {
-          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Type: ch.type, Detail: ch.description, Page: ch.page || "", Source: ch.source_quote || "" });
-        }
-        for (const h of (snap.key_highlights||[])) {
-          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Type: "Highlight", Detail: h, Page: "", Source: "" });
-        }
+      if (c.extraction.company_snapshot_brief) {
+        snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Detail: c.extraction.company_snapshot_brief });
       }
-      const esg = c.extraction.esg_snapshot;
-      if (esg && (esg.summary || (esg.highlights||[]).length || (esg.ratings_mentioned||[]).length)) {
-        snapshotRows.push({
-          Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG",
-          Type: "Summary", Detail: esg.summary || "", Page: "", Source: ""
-        });
-        for (const h of (esg.highlights||[])) {
-          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Type: "Highlight", Detail: h.text, Page: h.page || "", Source: "" });
-        }
-        if ((esg.ratings_mentioned||[]).length) {
-          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Type: "Ratings mentioned", Detail: esg.ratings_mentioned.join("; "), Page: "", Source: "" });
-        }
+      if (c.extraction.esg_snapshot_brief) {
+        snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Detail: c.extraction.esg_snapshot_brief });
       }
       for (const s of c.extraction.segments) {
         const m = findMapping(c, s.segment_name);
@@ -845,10 +825,6 @@ RULES:
           <input type="checkbox" id="webLookupToggle" ${localStorage.getItem("web_lookup_enabled")==="true"?"checked":""} style="width:auto;" />
           Use web search to fill gaps when a segment's product list is sparse
         </label>
-        <label style="display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--muted); cursor:pointer;">
-          <input type="checkbox" id="snapshotToggle" ${localStorage.getItem("include_snapshots")==="true"?"checked":""} style="width:auto;" />
-          Include Company Snapshot &amp; ESG Snapshot (adds one small extra pass, capped at 6 pages — off by default to keep cost down)
-        </label>
       </div>
     `;
     el("advToggle").addEventListener("click", () => {
@@ -862,7 +838,6 @@ RULES:
     });
     el("apiKeyIn").type = "password"; // masked by default; the eye toggle above reveals it on demand
     el("webLookupToggle").addEventListener("change", (e) => localStorage.setItem("web_lookup_enabled", e.target.checked ? "true" : "false"));
-    el("snapshotToggle").addEventListener("change", (e) => localStorage.setItem("include_snapshots", e.target.checked ? "true" : "false"));
     el("rateLimitIn").addEventListener("change", (e) => localStorage.setItem("rate_limit_ms", String(Math.max(0, parseInt(e.target.value,10) || 0))));
     el("dailyLimitIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
     el("saveKeyBtn").addEventListener("click", () => {
@@ -950,45 +925,22 @@ RULES:
   }
 
   function snapshotHtml(company) {
-    const snap = company.extraction && company.extraction.company_snapshot;
-    const hasContent = snap && (snap.summary || (snap.business_changes||[]).length || (snap.key_highlights||[]).length);
-    if (!hasContent) return "";
-    const changeIcons = { divestiture:"📤", acquisition:"📥", new_segment:"➕", renamed_segment:"✏️", restructuring:"🔧", discontinued_operation:"⛔", spin_off:"🪓", other:"ℹ️" };
+    const brief = company.extraction && company.extraction.company_snapshot_brief;
+    if (!brief) return "";
     return `
       <div class="panel" style="border-color:var(--border);">
-        <div class="label" style="margin-bottom:8px;">📋 Company snapshot</div>
-        ${snap.summary ? `<div class="seg-desc" style="margin-bottom:10px;">${snap.summary}</div>` : ""}
-        ${(snap.business_changes||[]).length ? `
-          <div class="label" style="margin-top:6px;">Business changes noted</div>
-          ${snap.business_changes.map(c => `
-            <div class="rs-item" style="margin-bottom:8px;">
-              <span>${changeIcons[c.type]||"ℹ️"}</span> <b>${(c.type||"").replace(/_/g," ")}</b>${c.page ? ` <span class="cat-val">(p.${c.page})</span>` : ""}
-              <div class="seg-desc" style="margin:2px 0 0;">${c.description}</div>
-              ${c.source_quote ? `<div class="rs-quote">"${c.source_quote}"</div>` : ""}
-            </div>`).join("")}
-        ` : ""}
-        ${(snap.key_highlights||[]).length ? `
-          <div class="label" style="margin-top:6px;">Key highlights</div>
-          ${snap.key_highlights.map(h => `<div class="seg-desc" style="margin:2px 0;">• ${h}</div>`).join("")}
-        ` : ""}
+        <div class="label" style="margin-bottom:6px;">📋 Company snapshot</div>
+        <div class="seg-desc">${brief}</div>
       </div>`;
   }
 
   function esgSnapshotHtml(company) {
-    const esg = company.extraction && company.extraction.esg_snapshot;
-    const hasContent = esg && (esg.summary || (esg.highlights||[]).length || (esg.ratings_mentioned||[]).length);
-    if (!hasContent) return "";
+    const brief = company.extraction && company.extraction.esg_snapshot_brief;
+    if (!brief) return "";
     return `
       <div class="panel" style="border-color:var(--teal-dark); background:var(--teal-bg);">
-        <div class="label" style="margin-bottom:8px; color:var(--teal-dark);">🌱 ESG snapshot</div>
-        ${esg.summary ? `<div class="seg-desc" style="margin-bottom:10px;">${esg.summary}</div>` : ""}
-        ${(esg.highlights||[]).length ? `
-          ${esg.highlights.map(h => `<div class="seg-desc" style="margin:2px 0;">• ${h.text}${h.page ? ` <span class="cat-val">(p.${h.page})</span>` : ""}</div>`).join("")}
-        ` : ""}
-        ${(esg.ratings_mentioned||[]).length ? `
-          <div class="label" style="margin-top:8px;">Ratings mentioned in filing</div>
-          <div class="seg-desc">${esg.ratings_mentioned.join(" • ")}</div>
-        ` : ""}
+        <div class="label" style="margin-bottom:6px; color:var(--teal-dark);">🌱 ESG snapshot</div>
+        <div class="seg-desc">${brief}</div>
       </div>`;
   }
 
@@ -1023,6 +975,10 @@ RULES:
           <input type="file" accept="application/pdf" class="file-in" />
         </label>
         ${company.file ? `<div class="filepill">📎 ${company.file.name}<button class="remove-file">remove</button></div>` : ""}
+        <label style="display:flex; align-items:center; gap:8px; margin:8px 0 4px; font-size:12px; color:var(--muted); cursor:pointer;">
+          <input type="checkbox" class="snapshot-check" ${company.includeSnapshot ? "checked" : ""} style="width:auto;" />
+          Include brief Company &amp; ESG snapshot (small extra cost, 1-2 lines each)
+        </label>
         ${company.log.length ? `<div class="progress-log">${company.log.map(l=>"> "+l).join("<br>")}</div>` : ""}
         ${company.error ? `<div class="error-msg">${company.error}</div>` : ""}
         ${company.extraction && company.extraction.segment_disclosure ? (() => {
@@ -1047,6 +1003,7 @@ RULES:
     cardEl.querySelector(".name-in").addEventListener("input", e => company.name = e.target.value);
     cardEl.querySelector(".year-in").addEventListener("input", e => company.year = e.target.value);
     cardEl.querySelector(".file-in").addEventListener("change", e => { const f = e.target.files[0]; if (f) { company.file = f; renderAll(); } });
+    cardEl.querySelector(".snapshot-check").addEventListener("change", e => { company.includeSnapshot = e.target.checked; });
     cardEl.querySelector(".extract-btn").addEventListener("click", () => extractCompany(company));
     cardEl.querySelector("[data-remove-company]").addEventListener("click", () => {
       state.companies = state.companies.filter(c => c.id !== company.id);
