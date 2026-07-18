@@ -321,7 +321,7 @@ RULES:
 4. company_total_revenue: the company's total consolidated revenue figure may be labeled "Total revenue", "Net revenue", "Net sales", "Total net sales", "Turnover", "Net turnover", or "Total income" depending on jurisdiction and industry — check thoroughly for all of these terms, not just the word "revenue". It MUST be sourced from the audited Consolidated Statement of Operations / Consolidated Income Statement — NOT from MD&A, a press release summary, or a segment note's own header. If not found in the pages shown, set value to null and note this in data_gaps.
 5. If the segment note includes a reconciling line ("Corporate", "Unallocated", "Eliminations", "Intersegment eliminations", or similar), extract it as its own entry with segment_type "reconciling_item", so summing every entry in "segments" equals company_total_revenue if the source data supports that.
 6. EXPLAIN ANY GAP BETWEEN TOTAL AND SEGMENT REVENUE. Check whether the segment entries (business + reconciling_item) sum to the total. If not, populate reconciliation_note explaining why, prioritizing reasons explicitly stated in the report (e.g. "segment revenue excludes intersegment sales of $X", "corporate costs of $X are not allocated to segments"). If the report doesn't explain the gap, say so plainly rather than guessing. If segments reconcile exactly (or within rounding), state that explicitly.
-7. COMPREHENSIVE PRODUCT LISTING. For each segment (or product category), extract "products": an exhaustive list of every specific product, product line, or service explicitly named under it anywhere in the pages shown — completeness matters more than brevity. If the report genuinely lists very few or no specific products, note that in data_gaps rather than padding the list.
+7. PRODUCT LISTING. For each segment (or product category), extract "products": up to 8 of the most material/significant products, product lines, or services explicitly named under it anywhere in the pages shown — prioritize whatever the report itself emphasizes as significant, not a complete inventory. If the report genuinely lists very few or no specific products, note that in data_gaps rather than padding the list.
 8. segment_description should be a fuller paragraph summarizing what the segment/category does, synthesizing the products list into a coherent description.
 9. TERMINOLOGY VARIES BY JURISDICTION. UK/IFRS filers often say "Segmental information" or "Divisional performance". Segments may be named after broad product categories (e.g. "Health", "Hygiene") — different from individual brands within those categories (per rule 3).
 10. CAREFULLY IDENTIFY THE CORRECT COLUMN before extracting a revenue figure — tables often show current period, prior period, and % change side by side. Extract only the current period's figure.
@@ -347,7 +347,7 @@ RULES:
 1. You will be given each segment's full product/service list, not just a short description — use this list as the primary basis for classification, not just the general description.
 2. For each segment, if its full product list clearly represents a single coherent business line/industry, assign one GICS code at 100%, tier "1_exact".
 3. If the products span multiple distinct industries, propose 2-4 GICS codes (percentages summing to 100), allocating percentage weight based on how many of the listed products fall under each code and their apparent relative significance. Tier "2_estimated_clear" if the product list gives enough detail to allocate with reasonable confidence, "3_estimated_limited" if the product list is sparse or vague.
-4. estimation_logic: explain WHY you split the segment the way you did, explicitly referencing which specific products drove which percentage (e.g. "60% Software given 3 of 5 listed products are enterprise software; 40% Hardware for the remaining 2 hardware products"). This must be a substantive explanation, not a generic restatement of the tier.
+4. estimation_logic: ONE concise sentence (max ~25 words) explaining WHY you split the segment the way you did, referencing which products drove which percentage (e.g. "60% Software given 3 of 5 listed products are enterprise software; 40% Hardware for the rest").
 5. For every individual allocation, include key_products: the specific product/service names from the segment's product list that justify that code and percentage — do not invent products not in the provided list.
 6. If the segment's product list was sparse (noted in data_gaps by the extraction step) and you are given supplementary web search results, you may use them to identify likely products for that segment — if you do, set source_link to the URL you drew from and note in estimation_logic that web research supplemented the filing's own disclosure. If no web results are provided and the product list is sparse, classify at tier "3_estimated_limited" based on the segment name and general description alone, and say so in estimation_logic.
 7. Use the most specific GICS level you can justify.
@@ -478,11 +478,11 @@ RULES:
       const includeSnapshots = localStorage.getItem("include_snapshots") === "true";
       const extractionSystem = buildExtractionSystem(includeSnapshots);
       log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content${includeSnapshots ? " + business/ESG snapshot signals" : ""}...`);
-      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 32, getKeywords(includeSnapshots));
+      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 24, getKeywords(includeSnapshots)); // reduced from 32 to cut input cost — scanner already prioritizes highest-relevance pages first
       log(company, `Found ${selected.length} relevant page(s) out of ${total}: ${selected.join(", ")}`);
 
       const readBatches = async (pages, label) => {
-        const batchSize = 4; // reduced from 6 — combined with JPEG compression, keeps well under Vercel's request size limit
+        const batchSize = 6; // increased back up — JPEG compression already solved the payload-size problem, so larger batches now just mean fewer repeated system-prompt calls
         let m = null;
         for (let i = 0; i < pages.length; i += batchSize) {
           const batchPages = pages.slice(i, i + batchSize);
@@ -513,7 +513,7 @@ RULES:
       const stillMissingTotal = !merged.company_total_revenue || merged.company_total_revenue.value == null;
       const stillMissingSegment = merged.segments.some(s => s.revenue_value == null);
       if ((stillMissingTotal || stillMissingSegment) && remainingRanked.length > 0) {
-        const extra = remainingRanked.slice(0, 20);
+        const extra = remainingRanked.slice(0, 10); // reduced from 20 — this fallback pass was nearly doubling cost when it triggered
         log(company, `Total or segment revenue not found in initial scan — expanding search to ${extra.length} more page(s) before giving up.`);
         const fallback = await readBatches(extra, "fallback");
         if (fallback) merged = mergeExtractions(merged, fallback);
