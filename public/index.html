@@ -1,0 +1,1073 @@
+<style>
+  :root {
+    --bg:#F7F3ED; --panel:#FFFFFF; --border:#E4DACB; --border-light:#D3C4AC;
+    --text:#221D17; --muted:#6E6355; --muted2:#9C8F79;
+    --teal:#C1541A; --teal-dark:#9A4213; --teal-bg:rgba(193,84,26,0.09);
+    --amber:#B8860B; --amber-dark:#8C6508; --amber-bg:rgba(184,134,11,0.10);
+    --red:#B3261E; --red-dark:#8C1D17; --red-bg:rgba(179,38,30,0.08);
+    --blue:#10725F; --blue-dark:#0B5346; --blue-bg:rgba(16,114,95,0.09);
+  }
+  * { box-sizing: border-box; }
+  #rev-root { background:var(--bg); color:var(--text); font-family:ui-sans-serif,system-ui,sans-serif; min-height:100vh; padding:32px 24px; }
+  .wrap { max-width:1150px; margin:0 auto; }
+  .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid var(--border); padding-bottom:20px; margin-bottom:24px; gap:16px; flex-wrap:wrap; }
+  .brand { color:var(--teal); font-size:11px; letter-spacing:0.2em; text-transform:uppercase; font-family:ui-monospace,monospace; margin-bottom:4px; font-weight:700; }
+  h1 { font-size:24px; font-weight:800; margin:0 0 4px; color:#181410; }
+  .sub { font-size:13px; color:var(--muted); margin:0; max-width:600px; }
+  .badge { padding:8px 14px; border-radius:6px; font-size:13px; white-space:nowrap; border:1px solid var(--border); background:var(--panel); }
+  .badge.bad { border-color:var(--red-dark); background:var(--red-bg); color:var(--red); }
+  .badge.good { border-color:var(--blue-dark); background:var(--blue-bg); color:var(--blue); }
+  .panel { border:1px solid var(--border); border-radius:10px; padding:16px; margin-bottom:20px; background:var(--panel); box-shadow:0 2px 6px rgba(34,29,23,0.05); }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
+  @media (max-width:820px){ .grid3{ grid-template-columns:1fr; } }
+  .label { font-size:11px; text-transform:uppercase; letter-spacing:0.05em; color:var(--muted); display:block; margin-bottom:6px; font-weight:600; }
+  input[type=text], input[type=password], select, textarea {
+    width:100%; background:#FDFBF8; border:1px solid var(--border-light); border-radius:5px; color:var(--text);
+    padding:8px 10px; font-size:13px; font-family:inherit;
+  }
+  input[type=text]:focus, input[type=password]:focus, textarea:focus { outline:none; border-color:var(--teal); }
+  .dropzone { display:flex; align-items:center; gap:8px; border:1.5px dashed var(--border-light); border-radius:6px;
+    padding:12px; font-size:13px; color:var(--muted); cursor:pointer; margin:10px 0; background:#FDFBF8; }
+  .dropzone:hover { border-color:var(--teal); color:var(--teal-dark); }
+  .dropzone input { display:none; }
+  .filepill { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--teal-dark); margin-bottom:8px; font-weight:600; }
+  .filepill button { margin-left:auto; background:none; border:none; color:var(--muted); cursor:pointer; font-size:12px; }
+  button.primary { background:linear-gradient(135deg, var(--teal), var(--amber)); border:none; color:#FFFDF9; font-weight:700; font-size:13px;
+    border-radius:6px; padding:10px 18px; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;
+    box-shadow:0 2px 6px rgba(193,84,26,0.30); }
+  button.primary:disabled { opacity:0.5; cursor:default; }
+  button.primary:hover:not(:disabled) { filter:brightness(1.08); }
+  button.secondary { background:var(--blue-bg); border:1px solid var(--blue-dark); color:var(--blue-dark); font-weight:700;
+    font-size:13px; border-radius:6px; padding:10px 18px; cursor:pointer; display:flex; align-items:center; gap:8px; }
+  button.secondary:hover:not(:disabled) { background:var(--blue-dark); color:#FFFDF9; }
+  button.secondary:disabled { opacity:0.5; }
+  button.ghost { background:var(--panel); border:1px solid var(--border-light); color:var(--muted); font-size:12px;
+    border-radius:6px; padding:8px 14px; cursor:pointer; font-weight:600; }
+  button.ghost:hover { color:var(--teal-dark); border-color:var(--teal); }
+  button.danger-ghost { background:none; border:none; color:var(--muted); font-size:12px; cursor:pointer; }
+  button.danger-ghost:hover { color:var(--red); }
+  .spin { display:inline-block; width:13px; height:13px; border:2px solid currentColor; border-right-color:transparent;
+    border-radius:50%; animation:spin 0.7s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .progress-log { font-size:11px; color:var(--muted); margin-top:8px; font-family:ui-monospace,monospace; line-height:1.6; max-height:100px; overflow-y:auto; background:#FFFCF6; border-radius:4px; padding:6px 8px; }
+  .error-msg { color:var(--red); font-size:13px; margin-top:8px; font-weight:600; }
+  .seg-card { border:1px solid var(--border); border-radius:10px; margin-bottom:14px; overflow:hidden; background:var(--panel); }
+  .seg-head { display:flex; justify-content:space-between; align-items:center; padding:12px 16px; background:#FDEEDC; border-bottom:1px solid var(--border); flex-wrap:wrap; gap:8px; }
+  .seg-name { font-weight:700; font-size:14px; color:#20120B; }
+  .seg-rev { font-size:12px; color:var(--muted); }
+  .pill { font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid; white-space:nowrap; display:inline-flex; align-items:center; gap:4px; font-weight:700; }
+  .pill.exact { color:var(--teal-dark); border-color:var(--teal-dark); background:var(--teal-bg); }
+  .pill.est { color:var(--amber-dark); border-color:var(--amber-dark); background:var(--amber-bg); }
+  .pill.warn { color:var(--red); border-color:var(--red-dark); background:var(--red-bg); }
+  .seg-body { padding:12px 16px; }
+  .seg-desc { font-size:12px; color:var(--muted); margin-bottom:10px; line-height:1.5; }
+  .alloc-row { display:grid; grid-template-columns:90px 1fr 70px 24px; gap:8px; align-items:center; margin-bottom:6px; }
+  .alloc-row input[type=text] { font-size:12px; padding:6px 8px; }
+  .alloc-row input[type=number] { width:100%; background:#FFFCF6; border:1px solid var(--border-light); border-radius:5px; color:var(--text); padding:6px 8px; font-size:12px; }
+  .alloc-remove { background:none; border:none; color:var(--muted); cursor:pointer; font-size:14px; }
+  .alloc-sum { font-size:11px; margin-top:4px; font-weight:600; }
+  .alloc-sum.ok { color:var(--teal-dark); } .alloc-sum.bad { color:var(--red); }
+  .add-alloc { font-size:11px; color:var(--blue-dark); background:none; border:none; cursor:pointer; margin-top:4px; font-weight:600; }
+  .quote { font-size:11px; color:var(--muted2); font-style:italic; margin-top:8px; }
+  .footnote { font-size:11px; color:var(--muted2); margin-top:14px; line-height:1.6; }
+  .recon-panel { display:flex; gap:24px; flex-wrap:wrap; font-size:13px; }
+  .recon-item .label { margin-bottom:2px; }
+  .company-card { border:1px solid var(--border); border-radius:10px; margin-bottom:20px; overflow:hidden; background:var(--panel); box-shadow:0 1px 3px rgba(43,23,16,0.05); }
+  .company-head { display:flex; justify-content:space-between; align-items:center; padding:14px 16px; background:#FDEEDC; border-bottom:1px solid var(--border); }
+  .company-title { font-weight:700; font-size:14px; display:flex; align-items:center; gap:8px; color:#20120B; }
+  .company-status { font-size:11px; padding:2px 8px; border-radius:4px; border:1px solid var(--border-light); color:var(--muted); font-weight:700; }
+  .company-status.done { color:var(--teal-dark); border-color:var(--teal-dark); background:var(--teal-bg); }
+  .company-status.error { color:var(--red); border-color:var(--red-dark); background:var(--red-bg); }
+  .company-body { padding:16px; }
+  .toolbar { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px; align-items:center; }
+</style>
+
+<div id="rev-root">
+  <div class="wrap">
+    <div class="header">
+      <div>
+        <div class="brand">💵 REVENUE LEDGER 001 — MULTI-COMPANY</div>
+        <h1>Segment Revenue &amp; NAICS Mapping — batch mode</h1>
+        <p class="sub">Add one card per company, upload each 10-K / annual report. Extracts segment revenue and maps each to both NAICS and GICS codes with estimation logic and key products — if segments are reported by geography, they're consolidated into one company-wide estimation instead. Export everything to Excel.</p>
+      </div>
+      <div id="globalBadge"></div>
+    </div>
+
+    <div class="panel" id="apiKeyPanel"></div>
+
+    <div class="toolbar">
+      <button class="primary" id="addCompanyBtn" style="width:auto;">+ Add company</button>
+      <button class="secondary" id="processAllBtn" style="width:auto;">▶ Process all pending</button>
+      <button class="ghost" id="exportBtn">⬇ Export all to Excel</button>
+    </div>
+    <div id="errorBox" class="error-msg"></div>
+
+    <div id="companiesList"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+(function () {
+  window.addEventListener("error", (e) => {
+    console.error("Uncaught error:", e.error || e.message);
+    const box = document.getElementById("errorBox");
+    if (box) box.textContent = "Something went wrong: " + (e.error && e.error.message ? e.error.message : e.message) + " — check the browser console for details.";
+  });
+  window.addEventListener("unhandledrejection", (e) => {
+    console.error("Unhandled rejection:", e.reason);
+    const box = document.getElementById("errorBox");
+    if (box) box.textContent = "Something went wrong: " + (e.reason && e.reason.message ? e.reason.message : e.reason);
+  });
+
+  if (typeof pdfjsLib === "undefined") {
+    document.getElementById("rev-root").innerHTML =
+      '<div style="padding:40px;text-align:center;color:#D6362A;">PDF library failed to load from the CDN — check your network connection or ad-blocker, then reload the tool.</div>';
+    return;
+  }
+  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+  const KEYWORDS = /segment|segmental|reportable segment|operating segment|single (reportable|operating) segment|one (reportable|operating) segment|net (sales|revenue)|total net (sales|revenue)|net turnover|turnover|total income|business unit|naics|revenue by (segment|category|division|product)|product categor|revenue stream|disaggregat|consolidated statements? of (operations|income)|consolidated income statement|total revenue|corporate.{0,10}(eliminations|other|unallocated)|divisional (performance|results|revenue)|by (division|category|reportable segment|product)|divestiture|disposal|discontinued operation|acquisition|restructur|rebrand|renamed|strategic review|spin-off|spinoff|significant events|key developments|sustainab|\bESG\b|net zero|net-zero|carbon neutral|emissions? (target|reduction|goal)|MSCI|CDP\b|sustainalytics|board (composition|diversity)|governance|materiality|controvers/i;
+  const HIGH_PRIORITY_KEYWORDS = /consolidated statements? of operations|consolidated income statement|consolidated statements? of income|total (net )?revenue/i;
+  const DEFAULT_MODEL = "gemini-3.1-flash-lite"; // gemini-2.5-flash-lite and gemini-2.5-flash are both retired for new usage. 3.1 Flash-Lite (~$0.25/$1.50 per 1M tokens) is the current cheap tier. Check ai.google.dev/gemini-api/docs/models if this also becomes stale.
+
+  // Daily usage quota — a soft per-browser limit, not a hard security boundary (someone could clear
+  // localStorage to reset it), but it paces the shared key's budget evenly across the team instead of
+  // letting one person front-load a whole period's usage into a single day. Default of 2/user/day means
+  // 11 analysts working ~22 days/month land around 484 companies/month worst case — still tune this
+  // against real measured cost per company once you have it; the math in this comment is a starting
+  // point, not a guarantee. Adjustable in Advanced settings.
+  const DEFAULT_DAILY_LIMIT = 4; // 11 analysts × 4/day × ~22 working days ≈ 968/month → ~$19-34/month at the ~$0.02-0.035/company estimate, which is OVER the ₹1500 (~$15.63) monthly budget at both ends of that range. Set by explicit request over the stricter budget-fit number (3/day) — monitor real spend closely (Google Cloud Billing alert) since this is no longer conservatively inside budget on paper.
+  function currentDayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
+  function getUsage() {
+    let raw;
+    try { raw = JSON.parse(localStorage.getItem("usage_tracker") || "{}"); } catch(e) { raw = {}; }
+    if (raw.day !== currentDayKey()) raw = { day: currentDayKey(), count: 0 };
+    return raw;
+  }
+  function getDailyLimit() { return parseInt(localStorage.getItem("daily_limit") || String(DEFAULT_DAILY_LIMIT), 10); }
+  function recordUsage() {
+    const u = getUsage();
+    u.count += 1;
+    localStorage.setItem("usage_tracker", JSON.stringify(u));
+  }
+  function usageRemaining() { return Math.max(0, getDailyLimit() - getUsage().count); }
+
+
+  let idCounter = 1;
+  let state = { companies: [] };
+
+  function el(id){ return document.getElementById(id); }
+  function newCompany() {
+    return { id: idCounter++, name:"", year:"", file:null, log:[], loading:false, mapping:false, extraction:null, mapped:null, gicsSector:null, error:null };
+  }
+
+  // The model occasionally puts a real line break inside a text field instead of an escaped \n,
+  // which strict JSON.parse rejects even though the content itself is fine. This walks the string
+  // tracking whether we're inside a quoted value and escapes raw control characters only there.
+  function sanitizeJsonControlChars(str) {
+    let out = "";
+    let inString = false;
+    let escaped = false;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (inString) {
+        if (escaped) { out += ch; escaped = false; }
+        else if (ch === "\\") { out += ch; escaped = true; }
+        else if (ch === '"') { out += ch; inString = false; }
+        else if (ch === "\n") out += "\\n";
+        else if (ch === "\r") out += "\\r";
+        else if (ch === "\t") out += "\\t";
+        else out += ch;
+      } else {
+        if (ch === '"') inString = true;
+        out += ch;
+      }
+    }
+    return out;
+  }
+
+  function extractJson(text) {
+    const cleaned = text.replace(/```json|```/g, "");
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) throw new Error("No JSON object found in model response: " + cleaned.slice(0,120));
+    try {
+      return JSON.parse(match[0]);
+    } catch (e) {
+      return JSON.parse(sanitizeJsonControlChars(match[0]));
+    }
+  }
+
+  // Converts our internal OpenAI-style content blocks ({type:"text"...}, {type:"image_url"...})
+  // into Gemini's native "parts" format, so the rest of the app's content-building code doesn't
+  // need to change even though the underlying API is different.
+  function toGeminiParts(content) {
+    return content.map(block => {
+      if (block.type === "text") return { text: block.text };
+      if (block.type === "image_url") {
+        const dataUrl = block.image_url.url; // "data:image/png;base64,XXXX"
+        return { inline_data: { mime_type: "image/jpeg", data: dataUrl.split(",")[1] } };
+      }
+      return null;
+    }).filter(Boolean);
+  }
+
+  // Global rate limiter — spaces out every API call regardless of which function triggered it
+  // (extraction batches, mapping, GICS sector, retries). Set conservatively for a free-tier key
+  // limited to ~5 requests/minute; reduce via the settings panel if the key ever gets billing enabled.
+  let lastCallAt = 0;
+  function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+  async function rateLimitWait() {
+    const minInterval = parseInt(localStorage.getItem("rate_limit_ms") || "13000", 10);
+    const wait = minInterval - (Date.now() - lastCallAt);
+    if (wait > 0) await sleep(wait);
+    lastCallAt = Date.now();
+  }
+
+  async function callClaude(system, content, opts) {
+    opts = opts || {};
+    await rateLimitWait();
+    const model = localStorage.getItem("gemini_model") || DEFAULT_MODEL;
+    const overrideKey = localStorage.getItem("gemini_api_key"); // optional — blank uses the server's shared key
+    const body = {
+      model,
+      contents: [{ role:"user", parts: toGeminiParts(content) }],
+      systemInstruction: { parts: [{ text: system }] },
+      generationConfig: { maxOutputTokens: opts.max_tokens || 2200, thinkingConfig: { thinkingBudget: 0 } }
+    };
+    if (overrideKey) body.apiKey = overrideKey;
+    if (opts.tools) {
+      // Gemini's built-in Google Search grounding tool — used for the optional web-lookup fallback.
+      body.tools = [{ google_search: {} }];
+    }
+    const res = await fetch("/api/gemini", {
+      method:"POST",
+      headers: { "Content-Type":"application/json" },
+      body: JSON.stringify(body)
+    });
+    const rawText = await res.text();
+    let data;
+    try {
+      data = JSON.parse(rawText);
+    } catch (parseErr) {
+      throw new Error(`Backend at /api/gemini didn't return JSON (status ${res.status}). This usually means the serverless function isn't deployed where Vercel expects it — check your repo's folder structure or Vercel's Root Directory setting. Response started with: "${rawText.slice(0,80)}"`);
+    }
+    if (!res.ok) throw new Error("API error: " + (data.error && data.error.message ? data.error.message : res.status));
+    const parts = (data.candidates && data.candidates[0] && data.candidates[0].content && data.candidates[0].content.parts) || [];
+    const text = parts.filter(p => !p.thought).map(p => p.text || "").join("");
+    return extractJson(text);
+  }
+
+  async function callClaudeWithRetry(system, content, maxRetries, opts) {
+    maxRetries = maxRetries == null ? 2 : maxRetries;
+    let lastErr;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try { return await callClaude(system, content, opts); }
+      catch (e) {
+        lastErr = e;
+        if (attempt < maxRetries) {
+          // Quota/rate-limit errors tell us exactly how long to wait (e.g. "Please retry in 15.1s") —
+          // use that instead of the short default backoff, which is too fast for a real quota cooldown.
+          const hint = e.message && e.message.match(/retry in ([\d.]+)s/i);
+          const waitMs = hint ? Math.ceil(parseFloat(hint[1]) * 1000) + 1000 : 700 * (attempt + 1);
+          await new Promise(r => setTimeout(r, waitMs));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
+  function fallbackMapping(reason) {
+    return {
+      tier:"unmapped_needs_review",
+      estimation_logic:"Automatic mapping failed" + (reason ? (": " + reason) : "") + " — use Retry or classify manually.",
+      naics_allocations:[], gics_allocations:[]
+    };
+  }
+
+  function normalizeName(s) { return (s||"").toLowerCase().replace(/[^a-z0-9]+/g," ").trim(); }
+
+  function findMapping(company, segName) {
+    if (!company.mapped) return null;
+    const key = normalizeName(segName);
+    if (company.mapped[key]) return company.mapped[key];
+    for (const k in company.mapped) if (k && (k.includes(key) || key.includes(k))) return company.mapped[k];
+    return null;
+  }
+
+  const EXTRACTION_SYSTEM = `You are a financial disclosure extraction specialist. Accuracy is critical — this data is used for analyst review. Past errors have included: mismatched segment/total revenue, segments incorrectly marked as not disclosed when a figure was actually present, and — most seriously — fabricated segments where a product or brand name mentioned in narrative/marketing text (e.g. "Veet bikini") was invented as if it were an official reportable segment. You are shown selected page images from a company's annual report / 10-K (each preceded by its page number).
+RULES:
+1. FIRST, DETERMINE THE SEGMENTATION BASIS available in this filing, in this priority order, and record it in segment_disclosure:
+   a. "formal_business_segments" — the company explicitly states its reportable business/product segments (e.g. "The Group is organised into N segments/divisions: A, B, C") or has a formal segment/segmental note broken out by business line. This is the preferred basis whenever it exists.
+   b. "single_reportable_segment" — the company explicitly states it operates as a single reportable/operating segment (common phrasing: "The Group operates as one operating segment", "management reviews the business as a whole"). This is a valid, common disclosure — not a data gap. If found, create one segment entry representing the whole company, using company_total_revenue as its revenue.
+   c. "product_category_disaggregation" — no formal business segments exist, but the company provides an IFRS 15 / ASC 606-style "disaggregation of revenue" table breaking revenue down by product category, product line, or revenue stream (common even for single-segment companies). If this is the only breakdown available, use each product category row as a segment entry (segment_type "business"), since it is still a legitimate basis for industry classification even though it isn't a formal reportable segment.
+   d. "geographic_only" — LAST RESORT ONLY: no business/product breakdown of any kind exists, and the ONLY breakdown disclosed is by region/country. Use this only when (a), (b), and (c) are all genuinely absent from the pages shown.
+   e. "not_found" — no segmentation or revenue breakdown of any kind was found in the pages shown.
+   Populate segment_disclosure.basis with one of the above, and segment_disclosure.explanation with a one-sentence justification citing what you found (e.g. "Company states on p.12 it operates as a single reportable segment" or "No formal segment note found; using revenue-by-product-category table on p.34 instead").
+2. AVOID GEOGRAPHIC SEGMENTATION unless basis (d) genuinely applies per rule 1. If both a business/product breakdown AND a geographic breakdown appear in the same report, ALWAYS use the business/product breakdown and ignore the geographic one entirely — the geographic breakdown is the SAME revenue shown a different way, not additional revenue, and including both would double-count.
+3. DO NOT extract a "segment" from marketing copy, brand highlights, product launch announcements, or MD&A commentary about a specific product line. A brand or product name is NOT a segment unless it is literally a row in the official segment table or product-category disaggregation table identified in rule 1. If you are extracting more than 6-8 distinct segment/category names, stop and reconsider — a longer list almost always means product/brand names have been mistaken for segments.
+4. company_total_revenue: the company's total consolidated revenue figure may be labeled "Total revenue", "Net revenue", "Net sales", "Total net sales", "Turnover", "Net turnover", or "Total income" depending on jurisdiction and industry — check thoroughly for all of these terms, not just the word "revenue". It MUST be sourced from the audited Consolidated Statement of Operations / Consolidated Income Statement — NOT from MD&A, a press release summary, or a segment note's own header. If not found in the pages shown, set value to null and note this in data_gaps.
+5. If the segment note includes a reconciling line ("Corporate", "Unallocated", "Eliminations", "Intersegment eliminations", or similar), extract it as its own entry with segment_type "reconciling_item", so summing every entry in "segments" equals company_total_revenue if the source data supports that.
+6. EXPLAIN ANY GAP BETWEEN TOTAL AND SEGMENT REVENUE. Check whether the segment entries (business + reconciling_item) sum to the total. If not, populate reconciliation_note explaining why, prioritizing reasons explicitly stated in the report (e.g. "segment revenue excludes intersegment sales of $X", "corporate costs of $X are not allocated to segments"). If the report doesn't explain the gap, say so plainly rather than guessing. If segments reconcile exactly (or within rounding), state that explicitly.
+7. COMPREHENSIVE PRODUCT LISTING. For each segment (or product category), extract "products": an exhaustive list of every specific product, product line, or service explicitly named under it anywhere in the pages shown — completeness matters more than brevity. If the report genuinely lists very few or no specific products, note that in data_gaps rather than padding the list.
+8. segment_description should be a fuller paragraph summarizing what the segment/category does, synthesizing the products list into a coherent description.
+9. TERMINOLOGY VARIES BY JURISDICTION. UK/IFRS filers often say "Segmental information" or "Divisional performance". Segments may be named after broad product categories (e.g. "Health", "Hygiene") — different from individual brands within those categories (per rule 3).
+10. CAREFULLY IDENTIFY THE CORRECT COLUMN before extracting a revenue figure — tables often show current period, prior period, and % change side by side. Extract only the current period's figure.
+11. DO NOT mark disclosure_type as "not_disclosed" if a numeric revenue figure appears anywhere on the pages shown. Only use "not_disclosed" when an entry from the chosen basis (rule 1) has genuinely no revenue figure anywhere in the provided pages.
+12. Every figure (company_total_revenue and every segment) MUST include the exact page number it was read from (the "Page N:" label shown with that image). Mandatory for verification.
+13. disclosure_type per segment: "exact" (clean single-line figure), "aggregated" (bundles multiple lines), or "not_disclosed" (per rule 11).
+14. segment_type per segment: "business" (includes product-category-disaggregation rows and the single-segment case), "geographic" (only per rule 1d), or "reconciling_item" (per rule 5).
+15. company_business_description: 1-2 sentence summary of overall products/services, from the business overview section if present.
+16. COMPANY SNAPSHOT — scan for and summarize any of the following if mentioned anywhere in the pages shown: divestitures/disposals, acquisitions, discontinued operations, new segments added, segments renamed/restructured, spin-offs, major strategic changes. Populate company_snapshot.business_changes with one entry per event (type, description, page, source_quote). Populate company_snapshot.key_highlights with 2-5 short bullets on notable developments an analyst should know. Populate company_snapshot.summary with a 2-3 sentence overview of where the company stands. If none found, say so explicitly rather than leaving it sparse — do not fabricate events.
+17. ESG SNAPSHOT — scan for and summarize any ESG-relevant content mentioned anywhere in the pages shown: sustainability commitments or targets (e.g. net zero dates, emissions reduction goals), ESG ratings or scores if explicitly stated (e.g. "MSCI AA", "CDP A-", "Sustainalytics score"), governance highlights (board composition, diversity disclosures), and any controversies, litigation, or ESG-related risks mentioned. Populate esg_snapshot.summary with a 2-3 sentence overview of the company's ESG positioning based only on what's in these pages. Populate esg_snapshot.highlights with 2-5 short bullets (each tagged with a page number where possible). Populate esg_snapshot.ratings_mentioned with any explicitly stated third-party ESG ratings/scores (empty array if none). If no ESG content is found in the pages shown, say so explicitly in summary rather than leaving it sparse — do not infer or estimate ESG performance that isn't explicitly stated.
+18. Never invent numbers, segment names, products, or business/ESG events. If uncertain, exclude and note the uncertainty in data_gaps.
+19. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{
+ "company_total_revenue": {"value": number|null, "currency": string|null, "page": number|null, "source_quote": string|null},
+ "company_business_description": string|null,
+ "segment_disclosure": {"basis": "formal_business_segments|single_reportable_segment|product_category_disaggregation|geographic_only|not_found", "explanation": string},
+ "reconciliation_note": string|null,
+ "segments": [{"segment_name": string, "segment_description": string, "products": [string], "revenue_value": number|null, "currency": string|null, "disclosure_type": "exact|aggregated|not_disclosed", "segment_type": "business|geographic|reconciling_item", "page": number|null, "source_quote": string|null}],
+ "company_snapshot": {"summary": string, "business_changes": [{"type": "divestiture|acquisition|new_segment|renamed_segment|restructuring|discontinued_operation|spin_off|other", "description": string, "page": number|null, "source_quote": string|null}], "key_highlights": [string]},
+ "esg_snapshot": {"summary": string, "highlights": [{"text": string, "page": number|null}], "ratings_mentioned": [string]},
+ "data_gaps": [string]
+}`;
+
+  const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to BOTH NAICS codes (2022 NAICS US structure) AND GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
+RULES:
+1. You will be given each segment's full product/service list, not just a short description — use this list as the primary basis for classification, not just the general description.
+2. For each segment, if its full product list clearly represents a single coherent business line/industry, assign one NAICS code and one GICS code, each at 100%, tier "1_exact".
+3. If the products span multiple distinct industries, propose 2-4 NAICS codes AND 2-4 GICS codes (each classification's percentages summing to 100 independently), allocating percentage weight based on how many of the listed products fall under each code and their apparent relative significance. Tier "2_estimated_clear" if the product list gives enough detail to allocate with reasonable confidence, "3_estimated_limited" if the product list is sparse or vague.
+4. estimation_logic: explain WHY you split the segment the way you did, explicitly referencing which specific products drove which percentage (e.g. "60% Software given 3 of 5 listed products are enterprise software; 40% Hardware for the remaining 2 hardware products"). This must be a substantive explanation, not a generic restatement of the tier.
+5. For every individual allocation (in both naics_allocations and gics_allocations), include key_products: the specific product/service names from the segment's product list that justify that code and percentage — do not invent products not in the provided list.
+6. If the segment's product list was sparse (noted in data_gaps by the extraction step) and you are given supplementary web search results, you may use them to identify likely products for that segment — if you do, set source_link to the URL you drew from and note in estimation_logic that web research supplemented the filing's own disclosure. If no web results are provided and the product list is sparse, classify at tier "3_estimated_limited" based on the segment name and general description alone, and say so in estimation_logic.
+7. Use the most specific code level you can justify in each system.
+8. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{"segment_mappings": [{"segment_name": string, "tier": "1_exact|2_estimated_clear|3_estimated_limited", "estimation_logic": string, "source_link": string|null, "naics_allocations": [{"code": string, "title": string, "percent": number, "key_products": [string]}], "gics_allocations": [{"code": string, "title": string, "percent": number, "key_products": [string]}]}]}`;
+
+  const GICS_SECTOR_SYSTEM = `You are an industry classification specialist determining a company's overall GICS Sector and Industry Group (the two broadest levels of the GICS hierarchy: Sector > Industry Group > Industry > Sub-Industry), based on its segments' revenue and their sub-industry classifications already determined.
+RULES:
+1. Weight your determination by segment revenue — the sector/industry group should reflect where most of the company's revenue actually comes from, not simply the first-listed segment.
+2. Provide the standard GICS Sector name (one of the 11 official GICS sectors) and Industry Group name.
+3. rationale: explain which segment(s) drove this determination and why, referencing their revenue share.
+4. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{"sector": string, "industry_group": string, "rationale": string}`;
+
+  function log(company, msg) { company.log.push(msg); renderAll(); }
+
+  async function scanAndSelectPages(pdf, maxPages) {
+    const total = pdf.numPages;
+    const scored = [];
+    for (let i = 1; i <= total; i++) {
+      const page = await pdf.getPage(i);
+      const tc = await page.getTextContent();
+      const pageText = tc.items.map(it => it.str).join(" ");
+      const matches = pageText.match(KEYWORDS);
+      scored.push({ page: i, score: matches ? matches.length : 0 });
+    }
+    let selected = scored.filter(s => s.score > 0).sort((a,b) => a.page - b.page);
+    let usedFallbackSampling = false;
+    if (selected.length === 0) {
+      usedFallbackSampling = true;
+      const step = Math.max(1, Math.floor(total / 15));
+      selected = [];
+      for (let i = 1; i <= total; i += step) selected.push({ page:i, score:0 });
+    }
+    if (selected.length > maxPages) selected = selected.sort((a,b) => b.score - a.score).slice(0, maxPages).sort((a,b) => a.page - b.page);
+    const selectedPages = selected.map(s => s.page);
+    // Full ranked list (all pages with score>0, best first) minus what's already selected — used for a fallback
+    // second pass if total/segment revenue still isn't found after reading the initially selected pages.
+    const remainingRanked = scored.filter(s => s.score > 0 && !selectedPages.includes(s.page)).sort((a,b) => b.score - a.score).map(s => s.page);
+    return { total, selected: selectedPages, remainingRanked, usedFallbackSampling };
+  }
+
+  async function renderPageToBase64(pdf, pageNum, scale) {
+    const page = await pdf.getPage(pageNum);
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement("canvas");
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    const ctx = canvas.getContext("2d");
+    ctx.fillStyle = "#FFFFFF"; ctx.fillRect(0, 0, canvas.width, canvas.height); // JPEG has no transparency — white background first
+    await page.render({ canvasContext: ctx, viewport }).promise;
+    // JPEG at 0.85 quality is far smaller than PNG for a rendered page — this is what actually fixes the
+    // "413 Request Entity Too Large" error, since Vercel caps request body size regardless of image count.
+    return canvas.toDataURL("image/jpeg", 0.85).split(",")[1];
+  }
+
+  function mergeSegmentEntry(existing, incoming) {
+    if (!existing) return incoming;
+    const merged = { ...existing };
+    if (existing.revenue_value == null && incoming.revenue_value != null) {
+      merged.revenue_value = incoming.revenue_value;
+      merged.currency = incoming.currency;
+      merged.disclosure_type = incoming.disclosure_type;
+      merged.page = incoming.page;
+      merged.source_quote = incoming.source_quote;
+    }
+    const combinedProducts = [...(existing.products||[]), ...(incoming.products||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
+    merged.products = combinedProducts;
+    if ((incoming.segment_description||"").length > (existing.segment_description||"").length) merged.segment_description = incoming.segment_description;
+    return merged;
+  }
+
+  const BASIS_PRIORITY = { formal_business_segments: 4, single_reportable_segment: 3, product_category_disaggregation: 2, geographic_only: 1, not_found: 0 };
+
+  function mergeSegmentDisclosure(a, b) {
+    if (!a) return b; if (!b) return a;
+    const aP = BASIS_PRIORITY[a.basis] || 0, bP = BASIS_PRIORITY[b.basis] || 0;
+    return aP >= bP ? a : b;
+  }
+
+  function mergeExtractions(a, b) {
+    if (!a) return b; if (!b) return a;
+    const totalRev = (a.company_total_revenue && a.company_total_revenue.value != null) ? a.company_total_revenue : b.company_total_revenue;
+    const bizDesc = a.company_business_description || b.company_business_description || null;
+    const reconNote = a.reconciliation_note || b.reconciliation_note || null;
+    const segDisclosure = mergeSegmentDisclosure(a.segment_disclosure, b.segment_disclosure);
+    const segMap = new Map();
+    for (const s of [...(a.segments||[]), ...(b.segments||[])]) {
+      const key = normalizeName(s.segment_name);
+      segMap.set(key, mergeSegmentEntry(segMap.get(key), s));
+    }
+    const snapA = a.company_snapshot || {}, snapB = b.company_snapshot || {};
+    const changes = [...(snapA.business_changes||[]), ...(snapB.business_changes||[])].filter((v,i,arr)=>arr.findIndex(x=>x.description===v.description)===i);
+    const highlights = [...(snapA.key_highlights||[]), ...(snapB.key_highlights||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
+    const summary = (snapA.summary && snapA.summary.length > (snapB.summary||"").length) ? snapA.summary : (snapB.summary || snapA.summary || null);
+    const esgA = a.esg_snapshot || {}, esgB = b.esg_snapshot || {};
+    const esgHighlights = [...(esgA.highlights||[]), ...(esgB.highlights||[])].filter((v,i,arr)=>arr.findIndex(x=>x.text===v.text)===i);
+    const esgRatings = [...(esgA.ratings_mentioned||[]), ...(esgB.ratings_mentioned||[])].filter((v,i,arr)=>arr.indexOf(v)===i);
+    const esgSummary = (esgA.summary && esgA.summary.length > (esgB.summary||"").length) ? esgA.summary : (esgB.summary || esgA.summary || null);
+    return {
+      company_total_revenue: totalRev,
+      company_business_description: bizDesc,
+      segment_disclosure: segDisclosure,
+      reconciliation_note: reconNote,
+      segments: Array.from(segMap.values()),
+      company_snapshot: { summary, business_changes: changes, key_highlights: highlights },
+      esg_snapshot: { summary: esgSummary, highlights: esgHighlights, ratings_mentioned: esgRatings },
+      data_gaps: [...(a.data_gaps||[]), ...(b.data_gaps||[])].filter((v,i,arr)=>arr.indexOf(v)===i)
+    };
+  }
+
+  async function extractCompany(company) {
+    if (!company.file) { company.error = "Upload a PDF first."; renderAll(); return; }
+    if (usageRemaining() <= 0) {
+      company.error = `Daily limit reached (${getDailyLimit()} companies). This resets at midnight. Contact your admin if you need a higher limit.`;
+      renderAll(); return;
+    }
+    recordUsage();
+    renderApiKeyPanel();
+    company.loading = true; company.log = []; company.error = null; company.extraction = null; company.mapped = null;
+    renderAll();
+    try {
+      log(company, "Loading PDF...");
+      const buf = await company.file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
+      log(company, `Loaded ${pdf.numPages} pages. Scanning for segment/revenue content...`);
+      const { total, selected, remainingRanked } = await scanAndSelectPages(pdf, 32);
+      log(company, `Found ${selected.length} relevant page(s) out of ${total}: ${selected.join(", ")}`);
+
+      const readBatches = async (pages, label) => {
+        const batchSize = 4; // reduced from 6 — combined with JPEG compression, keeps well under Vercel's request size limit
+        let m = null;
+        for (let i = 0; i < pages.length; i += batchSize) {
+          const batchPages = pages.slice(i, i + batchSize);
+          log(company, `Reading ${label} batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
+          const content = [];
+          for (const p of batchPages) {
+            const b64 = await renderPageToBase64(pdf, p, 1.8);
+            content.push({ type:"text", text:`Page ${p}:` });
+            content.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+          }
+          content.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nFiscal year: ${company.year||"Unknown"}\nExtract total revenue and all segments per the schema from the pages shown above.` });
+          try {
+            const partial = await callClaudeWithRetry(EXTRACTION_SYSTEM, content, 2, { max_tokens: 2200 });
+            m = mergeExtractions(m, partial);
+          } catch (batchErr) {
+            log(company, `⚠ ${label} batch ${Math.floor(i/batchSize)+1} failed to parse (${batchErr.message}) — skipping.`);
+          }
+        }
+        return m;
+      };
+
+      let merged = await readBatches(selected, "primary");
+      if (!merged) throw new Error("All batches failed — no data could be extracted.");
+
+      // Priority order: consolidated statement + segment note first (above). If total revenue or any
+      // segment's revenue still wasn't found, fall back to scanning further into the document rather
+      // than accepting an incomplete result.
+      const stillMissingTotal = !merged.company_total_revenue || merged.company_total_revenue.value == null;
+      const stillMissingSegment = merged.segments.some(s => s.revenue_value == null);
+      if ((stillMissingTotal || stillMissingSegment) && remainingRanked.length > 0) {
+        const extra = remainingRanked.slice(0, 20);
+        log(company, `Total or segment revenue not found in initial scan — expanding search to ${extra.length} more page(s) before giving up.`);
+        const fallback = await readBatches(extra, "fallback");
+        if (fallback) merged = mergeExtractions(merged, fallback);
+      }
+
+
+      // Defensive safety net: the prompt instructs the model never to mix a geographic breakdown
+      // with a business breakdown (since both independently sum to the same total revenue, combining
+      // them roughly doubles the apparent sum). If the model doesn't fully comply, enforce it here
+      // rather than trusting instruction-following alone — this is what actually caused segment/total
+      // revenue mismatches in testing.
+      const businessOrReconciling = merged.segments.filter(s => s.segment_type === "business" || s.segment_type === "reconciling_item");
+      const geoSegs = merged.segments.filter(s => s.segment_type === "geographic");
+      if (businessOrReconciling.length > 0 && geoSegs.length > 0) {
+        log(company, `⚠ Found both business and geographic segments in the same response — dropping ${geoSegs.length} geographic entr${geoSegs.length===1?"y":"ies"} to avoid double-counting revenue.`);
+        merged.segments = businessOrReconciling;
+        merged.consolidation_note = `${geoSegs.length} geographic segment(s) were also reported in this filing and have been excluded — only business-activity segments (plus any reconciling items) are used for revenue reconciliation and classification.`;
+      } else if (merged.segments.length > 0 && merged.segments.every(s => s.segment_type === "geographic")) {
+        log(company, "Segments are reported by geography — consolidating into a single company-wide estimation based on business activity instead.");
+        const desc = merged.company_business_description || merged.segments.map(s => s.segment_description).filter(Boolean).join(" ") || null;
+        merged.consolidation_note = "Original segments were reported by geography, not business activity — classification below reflects the whole company instead of individual segments.";
+        merged.segments = [{
+          segment_name: "Consolidated — company-wide",
+          segment_description: desc || "No business-activity description found in the scanned pages — mapping may be low-confidence.",
+          revenue_value: merged.company_total_revenue ? merged.company_total_revenue.value : null,
+          currency: merged.company_total_revenue ? merged.company_total_revenue.currency : null,
+          disclosure_type: "aggregated",
+          segment_type: "consolidated",
+          source_quote: null
+        }];
+      }
+
+      company.extraction = merged;
+      log(company, `Done. Found ${merged.segments.length} segment(s).`);
+
+      // Sanity check: real companies rarely report more than ~8 segments. A higher count is a strong
+      // signal the model picked up product/brand names from narrative text rather than official segments,
+      // as happened with fabricated entries like a specific product line being treated as a segment.
+      const businessCount = merged.segments.filter(s => s.segment_type === "business").length;
+      if (businessCount > 8) {
+        log(company, `⚠ ${businessCount} business segments found — unusually high. Real companies rarely report this many; some entries may be product/brand names mistaken for segments rather than official reportable segments. Please review each segment against the source before trusting the results.`);
+        merged.data_gaps = [...(merged.data_gaps||[]), `${businessCount} segments extracted — unusually high count, review for possible product/brand names incorrectly treated as segments.`];
+      }
+
+      await mapCompany(company);
+    } catch (e) {
+      company.error = "Extraction failed: " + (e.message || e);
+    } finally {
+      company.loading = false;
+      renderAll();
+    }
+  }
+
+  async function mapCompany(company) {
+    if (!company.extraction || !company.extraction.segments.length) return;
+    company.mapping = true; company.mapped = company.mapped || {};
+    renderAll();
+    const segs = company.extraction.segments;
+    const useWebLookup = el("webLookupToggle") && el("webLookupToggle").checked;
+    const chunkSize = 2; // smaller than before — dual NAICS+GICS output with key products is more verbose per segment
+    for (let i = 0; i < segs.length; i += chunkSize) {
+      const chunk = segs.slice(i, i + chunkSize);
+      try {
+        const thin = chunk.some(s => !s.products || s.products.length < 2);
+        const content = [{ type:"text", text: `Segments to classify:\n${JSON.stringify(chunk.map(s => ({segment_name:s.segment_name, segment_description:s.segment_description, products: s.products || []})))}` }];
+        const opts = { max_tokens: 2200 };
+        if (useWebLookup && thin) {
+          opts.tools = true; // signals callClaude to attach Gemini's built-in Google Search grounding tool
+          content[0].text += `\n\nNote: some segments above have a sparse product list from the filing. Use web search (e.g. "${company.name || "the company"} [segment name] products") to supplement, and set source_link to the page you used.`;
+        }
+        const result = await callClaudeWithRetry(MAPPING_SYSTEM, content, 2, opts);
+        if (!result || !Array.isArray(result.segment_mappings)) throw new Error("malformed response shape");
+        for (const m of result.segment_mappings) if (m && m.segment_name) company.mapped[normalizeName(m.segment_name)] = m;
+        for (const s of chunk) if (!findMapping(company, s.segment_name)) company.mapped[normalizeName(s.segment_name)] = fallbackMapping("segment missing from response");
+      } catch (e) {
+        for (const s of chunk) company.mapped[normalizeName(s.segment_name)] = fallbackMapping(e.message || String(e));
+      }
+      renderAll();
+    }
+
+    // Company-level GICS Sector/Industry Group, revenue-weighted across mapped segments
+    try {
+      const weighted = segs.filter(s => s.revenue_value != null).map(s => {
+        const m = findMapping(company, s.segment_name);
+        return { segment_name: s.segment_name, revenue: s.revenue_value, gics_allocations: m ? m.gics_allocations : [] };
+      });
+      if (weighted.length > 0) {
+        const content = [{ type:"text", text: `Segments with revenue and GICS sub-industry allocations:\n${JSON.stringify(weighted)}` }];
+        company.gicsSector = await callClaudeWithRetry(GICS_SECTOR_SYSTEM, content, 2, { max_tokens: 500 });
+      }
+    } catch (e) {
+      company.gicsSector = null;
+    }
+
+    company.mapping = false;
+    renderAll();
+  }
+
+  async function retrySegmentMapping(company, segIndex) {
+    const s = company.extraction.segments[segIndex];
+    company.mapped[normalizeName(s.segment_name)] = { tier:"pending", estimation_logic:"Retrying...", naics_allocations:[], gics_allocations:[] };
+    renderAll();
+    try {
+      const content = [{ type:"text", text: `Segment to classify:\n${JSON.stringify({segment_name:s.segment_name, segment_description:s.segment_description})}` }];
+      const result = await callClaudeWithRetry(MAPPING_SYSTEM, content, 2);
+      const m = result && Array.isArray(result.segment_mappings) ? result.segment_mappings[0] : null;
+      company.mapped[normalizeName(s.segment_name)] = m || fallbackMapping("still no valid response");
+    } catch (e) {
+      company.mapped[normalizeName(s.segment_name)] = fallbackMapping(e.message || String(e));
+    }
+    renderAll();
+  }
+
+  async function processAll() {
+    for (const company of state.companies) {
+      if (company.file && !company.extraction && !company.loading) {
+        await extractCompany(company);
+        await new Promise(r => setTimeout(r, 1200)); // small gap between companies, free-tier rate limits are shared
+      }
+    }
+  }
+
+  function exportToExcel() {
+    if (typeof XLSX === "undefined") {
+      el("errorBox").textContent = "Excel export library failed to load from the CDN — check your network connection and reload.";
+      return;
+    }
+    const done = state.companies.filter(c => c.extraction);
+    if (done.length === 0) {
+      el("errorBox").textContent = "No extracted data yet — process at least one company first.";
+      return;
+    }
+    const naicsRows = [];
+    const gicsRows = [];
+    const summaryRows = [];
+    const snapshotRows = [];
+    for (const c of done) {
+      const total = c.extraction.company_total_revenue;
+      const segSum = c.extraction.segments.reduce((s,x) => s + (x.revenue_value || 0), 0);
+      const diffPct = (total && total.value) ? Math.abs(segSum - total.value) / total.value * 100 : null;
+      summaryRows.push({
+        Company: c.name || "(unnamed)",
+        "Fiscal Year": c.year || "",
+        "Segmentation Basis": c.extraction.segment_disclosure ? c.extraction.segment_disclosure.basis : "",
+        "Segmentation Basis Explanation": c.extraction.segment_disclosure ? c.extraction.segment_disclosure.explanation : "",
+        "GICS Sector": c.gicsSector ? c.gicsSector.sector : "",
+        "GICS Industry Group": c.gicsSector ? c.gicsSector.industry_group : "",
+        "GICS Sector Rationale": c.gicsSector ? c.gicsSector.rationale : "",
+        "Total Revenue": total ? total.value : null,
+        Currency: total ? total.currency : "",
+        "Total Revenue Page": total ? (total.page || "") : "",
+        "Sum of Segments": segSum,
+        "Reconciliation Diff %": diffPct != null ? Math.round(diffPct*10)/10 : "n/a",
+        "Reconciliation Explanation": c.extraction.reconciliation_note || "",
+        "Consolidated (geographic segments)": c.extraction.consolidation_note ? "Yes" : "No",
+        "Data Gaps": (c.extraction.data_gaps||[]).join("; ")
+      });
+      const snap = c.extraction.company_snapshot;
+      if (snap) {
+        snapshotRows.push({
+          Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business",
+          Type: "Summary", Detail: snap.summary || "", Page: "", Source: ""
+        });
+        for (const ch of (snap.business_changes||[])) {
+          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Type: ch.type, Detail: ch.description, Page: ch.page || "", Source: ch.source_quote || "" });
+        }
+        for (const h of (snap.key_highlights||[])) {
+          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Type: "Highlight", Detail: h, Page: "", Source: "" });
+        }
+      }
+      const esg = c.extraction.esg_snapshot;
+      if (esg) {
+        snapshotRows.push({
+          Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG",
+          Type: "Summary", Detail: esg.summary || "", Page: "", Source: ""
+        });
+        for (const h of (esg.highlights||[])) {
+          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Type: "Highlight", Detail: h.text, Page: h.page || "", Source: "" });
+        }
+        if ((esg.ratings_mentioned||[]).length) {
+          snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "ESG", Type: "Ratings mentioned", Detail: esg.ratings_mentioned.join("; "), Page: "", Source: "" });
+        }
+      }
+      for (const s of c.extraction.segments) {
+        const m = findMapping(c, s.segment_name);
+        const baseRow = {
+          Company: c.name || "(unnamed)",
+          "Fiscal Year": c.year || "",
+          Segment: s.segment_name,
+          "Segment Type": s.segment_type || "",
+          Description: s.segment_description || "",
+          "Products / Services": (s.products||[]).join("; "),
+          Revenue: s.revenue_value,
+          Currency: s.currency || "",
+          "Disclosure Type": s.disclosure_type,
+          Tier: m ? m.tier : "not_mapped",
+          "Estimation Logic": m ? m.estimation_logic : "",
+          "Web Source (if used)": m ? (m.source_link || "") : "",
+          "Source Page": s.page || "",
+          "Source Quote": s.source_quote || ""
+        };
+        const naicsAllocs = (m && Array.isArray(m.naics_allocations) && m.naics_allocations.length) ? m.naics_allocations : [{code:"", title:"", percent:"", key_products:[]}];
+        for (const a of naicsAllocs) {
+          naicsRows.push({ ...baseRow, "NAICS Code": a.code || "", "NAICS Title": a.title || "", "Allocation %": a.percent != null ? a.percent : "", "Key Products/Activities": (a.key_products||[]).join("; ") });
+        }
+        const gicsAllocs = (m && Array.isArray(m.gics_allocations) && m.gics_allocations.length) ? m.gics_allocations : [{code:"", title:"", percent:"", key_products:[]}];
+        for (const a of gicsAllocs) {
+          gicsRows.push({ ...baseRow, "GICS Code": a.code || "", "GICS Title": a.title || "", "Allocation %": a.percent != null ? a.percent : "", "Key Products/Activities": (a.key_products||[]).join("; ") });
+        }
+      }
+    }
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Company Summary");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(snapshotRows), "Company Snapshot");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(naicsRows), "NAICS Mapping");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gicsRows), "GICS Mapping");
+    XLSX.writeFile(wb, "segment-revenue-naics-gics-export.xlsx");
+  }
+
+  function isAdmin() {
+    return new URLSearchParams(location.search).get("admin") === "1";
+  }
+
+  function renderApiKeyPanel() {
+    const p = el("apiKeyPanel");
+    const saved = localStorage.getItem("gemini_api_key");
+    const savedModel = localStorage.getItem("gemini_model") || DEFAULT_MODEL;
+    const keyLooksValid = saved && (saved.startsWith("AIza") || saved.startsWith("AQ."));
+    const used = getUsage().count;
+    const limit = getDailyLimit();
+    const remaining = usageRemaining();
+    const usagePct = Math.min(100, Math.round((used / limit) * 100));
+    const tone = remaining === 0 ? { c:"var(--red)", bg:"var(--red-bg)", bd:"var(--red-dark)" }
+      : (usagePct > 80 ? { c:"var(--amber-dark)", bg:"var(--amber-bg)", bd:"var(--amber-dark)" }
+      : { c:"var(--teal-dark)", bg:"var(--teal-bg)", bd:"var(--teal-dark)" });
+
+    const statusRowUser = `
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">⚡</span>
+        <div>
+          <div style="font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted2); font-weight:700;">Model</div>
+          <div style="font-size:15px; font-weight:800; color:var(--teal-dark);">${savedModel}</div>
+        </div>
+      </div>
+      <div style="height:10px; background:var(--border); border-radius:5px; margin-top:14px; overflow:hidden;">
+        <div style="height:100%; width:${usagePct}%; background:linear-gradient(90deg, var(--teal), var(--blue)); border-radius:5px; transition:width 0.3s;"></div>
+      </div>
+      <div style="font-size:11px; color:var(--muted2); margin-top:6px; text-transform:uppercase; letter-spacing:0.04em; font-weight:600;">Today's usage</div>
+      ${remaining === 0 ? `<div style="font-size:12px;color:var(--red);margin-top:8px; font-weight:600;">⚠ Daily limit reached — resets at midnight. Contact your admin if you need to continue today.</div>`
+        : (usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:8px;">Approaching today's usage limit.</div>` : "")}
+    `;
+
+    if (!isAdmin()) {
+      p.innerHTML = statusRowUser;
+      return;
+    }
+
+    const statusRowAdmin = `
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
+        <div style="display:flex; align-items:center; gap:10px;">
+          <span style="font-size:20px;">⚡</span>
+          <div>
+            <div style="font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted2); font-weight:700;">Model</div>
+            <div style="font-size:15px; font-weight:800; color:var(--teal-dark);">${savedModel}</div>
+          </div>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; background:${tone.bg}; border:1px solid ${tone.bd}; border-radius:20px; padding:6px 16px;">
+          <span style="font-size:11px; color:${tone.c}; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Today</span>
+          <span style="font-size:15px; font-weight:800; color:${tone.c};">${used}<span style="opacity:0.5; font-weight:600;"> / ${limit}</span></span>
+        </div>
+      </div>
+      <div style="height:8px; background:var(--border); border-radius:4px; margin-top:12px; overflow:hidden;">
+        <div style="height:100%; width:${usagePct}%; background:linear-gradient(90deg, ${tone.c}, ${tone.c}); border-radius:4px; transition:width 0.3s;"></div>
+      </div>
+      ${remaining === 0 ? `<div style="font-size:12px;color:var(--red);margin-top:8px; font-weight:600;">⚠ Daily limit reached — resets at midnight.</div>`
+        : (usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:8px;">Approaching today's limit (${remaining} left).</div>` : "")}
+    `;
+
+    p.innerHTML = statusRowAdmin + `
+      <button class="edit-toggle" id="advToggle" style="margin-top:14px;">⚙ Admin settings</button>
+      <div id="advPanel" style="display:none; margin-top:12px; padding-top:14px; border-top:1px solid var(--border);">
+        <div class="label">Your Gemini API key (optional override)</div>
+        <p style="font-size:11px;color:var(--muted2);margin:0 0 8px;">
+          Leave blank to use the shared server key. Only fill this in if you want to use your own key for this session —
+          stored in this browser only, sent to this site's backend, forwarded to Google, never anywhere else.
+        </p>
+        <div style="display:flex; gap:8px; margin-bottom:4px;">
+          <input type="text" id="apiKeyIn" placeholder="Leave blank to use the shared server key" value="${saved ? saved : ""}" style="flex:1; font-family:ui-monospace,monospace;" />
+          <button class="ghost" id="toggleKeyVis" type="button" style="width:auto; padding:8px 12px;">👁</button>
+          <button class="primary" id="saveKeyBtn" style="width:auto; padding:8px 16px;">Save</button>
+          ${saved ? `<button class="add-alloc" id="clearKeyBtn" style="white-space:nowrap;">Clear</button>` : ""}
+        </div>
+        ${saved && !keyLooksValid ? `<div style="font-size:11px;color:var(--red);margin-bottom:6px;">⚠ This doesn't look like a Gemini key (should start with "AIza" or "AQ.").</div>` : ""}
+        <div class="label" style="margin-top:10px;">Model ID</div>
+        <input type="text" id="modelIdIn" value="${savedModel}" />
+        <div class="label" style="margin-top:10px;">Daily limit (companies per browser)</div>
+        <input type="number" id="dailyLimitIn" value="${limit}" min="1" step="1" />
+        <div class="label" style="margin-top:10px;">Delay between API calls (ms)</div>
+        <p style="font-size:11px;color:var(--muted2);margin:0 0 6px;">13000ms matches a free-tier key's rate limit. Lower (e.g. 500) if this key has billing enabled.</p>
+        <input type="number" id="rateLimitIn" value="${localStorage.getItem("rate_limit_ms") || "13000"}" min="0" step="500" />
+        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:12px; color:var(--muted); cursor:pointer;">
+          <input type="checkbox" id="webLookupToggle" ${localStorage.getItem("web_lookup_enabled")==="true"?"checked":""} style="width:auto;" />
+          Use web search to fill gaps when a segment's product list is sparse
+        </label>
+      </div>
+    `;
+    el("advToggle").addEventListener("click", () => {
+      const panel = el("advPanel");
+      panel.style.display = panel.style.display === "none" ? "block" : "none";
+    });
+    let keyVisible = false;
+    el("toggleKeyVis").addEventListener("click", () => {
+      keyVisible = !keyVisible;
+      el("apiKeyIn").type = keyVisible ? "text" : "password";
+    });
+    el("apiKeyIn").type = "password"; // masked by default; the eye toggle above reveals it on demand
+    el("webLookupToggle").addEventListener("change", (e) => localStorage.setItem("web_lookup_enabled", e.target.checked ? "true" : "false"));
+    el("rateLimitIn").addEventListener("change", (e) => localStorage.setItem("rate_limit_ms", String(Math.max(0, parseInt(e.target.value,10) || 0))));
+    el("dailyLimitIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
+    el("saveKeyBtn").addEventListener("click", () => {
+      const val = el("apiKeyIn").value.trim();
+      const modelVal = el("modelIdIn").value.trim();
+      if (val) localStorage.setItem("gemini_api_key", val);
+      if (modelVal) localStorage.setItem("gemini_model", modelVal);
+      renderApiKeyPanel();
+    });
+    el("modelIdIn").addEventListener("change", (e) => localStorage.setItem("gemini_model", e.target.value.trim()));
+    const clearBtn = el("clearKeyBtn");
+    if (clearBtn) clearBtn.addEventListener("click", () => { localStorage.removeItem("gemini_api_key"); renderApiKeyPanel(); });
+  }
+
+  function allocBlockHtml(system, allocations) {
+    const sumPct = allocations.reduce((a,x)=>a+(x.percent||0),0);
+    const label = system === "naics" ? "NAICS allocation" : "GICS allocation";
+    return `
+      <div class="label" style="margin-top:10px;">${label}</div>
+      <div class="alloc-list" data-system="${system}">
+        ${allocations.map((a) => `
+          <div class="alloc-row">
+            <input type="text" class="code-in" value="${a.code||""}" placeholder="code" />
+            <input type="text" class="title-in" value="${a.title||""}" placeholder="${system.toUpperCase()} title" />
+            <input type="number" class="pct-in" value="${a.percent}" min="0" max="100" />
+            <button class="alloc-remove">✕</button>
+          </div>
+          ${(a.key_products && a.key_products.length) ? `<div class="quote" style="margin-top:-4px;margin-bottom:6px;">Key products/activities: ${a.key_products.join(", ")}</div>` : ""}
+        `).join("")}
+      </div>
+      <div class="alloc-sum ${Math.round(sumPct)===100?"ok":"bad"}" data-sum data-system="${system}">${allocations.length ? `Sum: ${sumPct}%` : ""}</div>
+      <button class="add-alloc" data-add data-system="${system}">+ add ${system.toUpperCase()} code</button>
+    `;
+  }
+
+  function segmentCardHtml(company, s, si) {
+    const m = findMapping(company, s.segment_name);
+    let tierClass = "", tierLabel = "Not mapped";
+    if (m) {
+      if (m.tier === "1_exact") { tierClass = "exact"; tierLabel = "Exact"; }
+      else if (m.tier === "unmapped_needs_review") { tierClass = "warn"; tierLabel = "Needs manual review"; }
+      else if (m.tier === "pending") { tierClass = "est"; tierLabel = "Retrying..."; }
+      else { tierClass = "est"; tierLabel = ({ "2_estimated_clear":"Estimated (clear)", "3_estimated_limited":"Estimated (limited)" }[m.tier] || m.tier); }
+    }
+    const naicsAllocations = (m && Array.isArray(m.naics_allocations)) ? m.naics_allocations : [];
+    const gicsAllocations = (m && Array.isArray(m.gics_allocations)) ? m.gics_allocations : [];
+    const needsRetry = m && m.tier === "unmapped_needs_review";
+    const isConsolidated = s.segment_type === "consolidated";
+    return `
+      <div class="seg-card" data-cid="${company.id}" data-si="${si}">
+        <div class="seg-head">
+          <div>
+            <div class="seg-name">${isConsolidated ? "🏢 " : ""}${s.segment_name}</div>
+            <div class="seg-rev">${s.revenue_value != null ? s.revenue_value.toLocaleString() + " " + (s.currency||"") : "revenue not disclosed"}</div>
+          </div>
+          <span class="pill ${tierClass}">${tierLabel}</span>
+        </div>
+        <div class="seg-body">
+          <div class="seg-desc">${s.segment_description||""}</div>
+          ${s.products && s.products.length ? `<div class="label" style="margin-top:8px;">Products / services under this segment</div><div class="seg-desc" style="margin-bottom:10px;">${s.products.join(" • ")}</div>` : ""}
+          ${m && m.estimation_logic ? `<div class="quote" style="font-style:normal;color:var(--muted);margin-bottom:6px;"><b>Estimation logic:</b> ${m.estimation_logic}</div>` : ""}
+          ${m && m.source_link ? `<div class="quote" style="margin-bottom:6px;">Supplemented via web search: <a href="${m.source_link}" target="_blank" style="color:var(--teal-dark);">${m.source_link}</a></div>` : ""}
+          ${allocBlockHtml("naics", naicsAllocations)}
+          ${allocBlockHtml("gics", gicsAllocations)}
+          ${needsRetry ? `<button class="add-alloc" data-retry style="color:#A6740B;">↻ Retry mapping</button>` : ""}
+          ${s.source_quote || s.page ? `<div class="quote">${s.page ? `Page ${s.page}` : ""}${s.page && s.source_quote ? " — " : ""}${s.source_quote ? `"${s.source_quote}"` : ""}</div>` : ""}
+        </div>
+      </div>`;
+  }
+
+  function reconciliationHtml(company) {
+    if (!company.extraction) return "";
+    const total = company.extraction.company_total_revenue;
+    const segSum = company.extraction.segments.reduce((s,x) => s + (x.revenue_value || 0), 0);
+    const disclosedCount = company.extraction.segments.filter(x => x.revenue_value != null).length;
+    if (!(total && total.value != null && disclosedCount > 0)) return "";
+    const diffPct = Math.abs(segSum - total.value) / total.value * 100;
+    const ok = diffPct < 3;
+    return `<div class="panel">
+      <div class="recon-panel">
+        <div class="recon-item"><div class="label">Total revenue${total.page ? ` (p.${total.page})` : ""}</div><div>${total.value.toLocaleString()} ${total.currency||""}</div></div>
+        <div class="recon-item"><div class="label">Sum of segments</div><div>${segSum.toLocaleString()} ${total.currency||""}</div></div>
+        <div class="recon-item"><div class="label">Difference</div><div style="color:${ok?"var(--teal)":"var(--red)"};font-weight:700;">${diffPct.toFixed(1)}%</div></div>
+      </div>
+      ${company.extraction.reconciliation_note ? `<div class="quote" style="font-style:normal;color:${ok?"var(--muted)":"var(--red)"};margin-top:8px;"><b>Why:</b> ${company.extraction.reconciliation_note}</div>` : (!ok ? `<div class="quote" style="color:var(--red);margin-top:8px;">No explanation was found in the filing for this gap — review manually before relying on these figures.</div>` : "")}
+    </div>`;
+  }
+
+  function snapshotHtml(company) {
+    const snap = company.extraction && company.extraction.company_snapshot;
+    if (!snap) return "";
+    const changeIcons = { divestiture:"📤", acquisition:"📥", new_segment:"➕", renamed_segment:"✏️", restructuring:"🔧", discontinued_operation:"⛔", spin_off:"🪓", other:"ℹ️" };
+    return `
+      <div class="panel" style="border-color:var(--border);">
+        <div class="label" style="margin-bottom:8px;">📋 Company snapshot</div>
+        ${snap.summary ? `<div class="seg-desc" style="margin-bottom:10px;">${snap.summary}</div>` : ""}
+        ${(snap.business_changes||[]).length ? `
+          <div class="label" style="margin-top:6px;">Business changes noted</div>
+          ${snap.business_changes.map(c => `
+            <div class="rs-item" style="margin-bottom:8px;">
+              <span>${changeIcons[c.type]||"ℹ️"}</span> <b>${(c.type||"").replace(/_/g," ")}</b>${c.page ? ` <span class="cat-val">(p.${c.page})</span>` : ""}
+              <div class="seg-desc" style="margin:2px 0 0;">${c.description}</div>
+              ${c.source_quote ? `<div class="rs-quote">"${c.source_quote}"</div>` : ""}
+            </div>`).join("")}
+        ` : ""}
+        ${(snap.key_highlights||[]).length ? `
+          <div class="label" style="margin-top:6px;">Key highlights</div>
+          ${snap.key_highlights.map(h => `<div class="seg-desc" style="margin:2px 0;">• ${h}</div>`).join("")}
+        ` : ""}
+      </div>`;
+  }
+
+  function esgSnapshotHtml(company) {
+    const esg = company.extraction && company.extraction.esg_snapshot;
+    if (!esg) return "";
+    return `
+      <div class="panel" style="border-color:var(--teal-dark); background:var(--teal-bg);">
+        <div class="label" style="margin-bottom:8px; color:var(--teal-dark);">🌱 ESG snapshot</div>
+        ${esg.summary ? `<div class="seg-desc" style="margin-bottom:10px;">${esg.summary}</div>` : ""}
+        ${(esg.highlights||[]).length ? `
+          ${esg.highlights.map(h => `<div class="seg-desc" style="margin:2px 0;">• ${h.text}${h.page ? ` <span class="cat-val">(p.${h.page})</span>` : ""}</div>`).join("")}
+        ` : ""}
+        ${(esg.ratings_mentioned||[]).length ? `
+          <div class="label" style="margin-top:8px;">Ratings mentioned in filing</div>
+          <div class="seg-desc">${esg.ratings_mentioned.join(" • ")}</div>
+        ` : ""}
+      </div>`;
+  }
+
+  function gicsSectorBadge(company) {
+    if (!company.gicsSector) return "";
+    return `<span class="company-status done" title="${company.gicsSector.rationale||""}">GICS: ${company.gicsSector.sector} — ${company.gicsSector.industry_group}</span>`;
+  }
+
+  function companyCardHtml(company) {
+    const status = company.loading || company.mapping ? `<span class="company-status"><span class="spin"></span> ${company.loading?"extracting":"mapping"}</span>`
+      : company.error ? `<span class="company-status error">error</span>`
+      : company.extraction ? `<span class="company-status done">done — ${company.extraction.segments.length} segment(s)</span>`
+      : `<span class="company-status">pending</span>`;
+    return `
+    <div class="company-card" data-cid="${company.id}">
+      <div class="company-head">
+        <div class="company-title">📁 ${company.name || "Untitled company"} ${status} ${gicsSectorBadge(company)}</div>
+        <button class="danger-ghost" data-remove-company>✕ remove</button>
+      </div>
+      <div class="company-body">
+        <div class="grid3">
+          <div><span class="label">Company</span><input type="text" class="name-in" value="${company.name}" placeholder="Company name" /></div>
+          <div><span class="label">Fiscal year</span><input type="text" class="year-in" value="${company.year}" placeholder="Optional" /></div>
+          <div style="display:flex; align-items:flex-end;">
+            <button class="primary extract-btn" style="width:100%;" ${company.loading||company.mapping?"disabled":""}>
+              ${company.loading||company.mapping ? `<span class="spin"></span> Processing...` : "Scan & extract"}
+            </button>
+          </div>
+        </div>
+        <label class="dropzone">
+          📄 <span style="overflow:hidden;text-overflow:ellipsis;">${company.file ? company.file.name : "Upload 10-K / annual report PDF"}</span>
+          <input type="file" accept="application/pdf" class="file-in" />
+        </label>
+        ${company.file ? `<div class="filepill">📎 ${company.file.name}<button class="remove-file">remove</button></div>` : ""}
+        ${company.log.length ? `<div class="progress-log">${company.log.map(l=>"> "+l).join("<br>")}</div>` : ""}
+        ${company.error ? `<div class="error-msg">${company.error}</div>` : ""}
+        ${company.extraction && company.extraction.segment_disclosure ? (() => {
+          const sd = company.extraction.segment_disclosure;
+          const basisLabel = { formal_business_segments:"Formal business segments", single_reportable_segment:"Single reportable segment", product_category_disaggregation:"Product category breakdown (no formal segments)", geographic_only:"Geographic breakdown only", not_found:"No segmentation found" }[sd.basis] || sd.basis;
+          const tone = sd.basis === "formal_business_segments" ? "good" : (sd.basis === "not_found" || sd.basis === "geographic_only" ? "bad" : "");
+          return `<div class="panel" style="${tone==="bad"?"border-color:var(--red-dark);background:var(--red-bg);":"border-color:var(--border-light);"} font-size:12px;">
+            <b>Segmentation basis:</b> ${basisLabel}${sd.explanation ? ` — ${sd.explanation}` : ""}
+          </div>`;
+        })() : ""}
+        ${company.extraction && company.extraction.consolidation_note ? `<div class="panel" style="border-color:var(--amber-dark); background:var(--amber-bg); color:var(--amber-dark); font-size:12px; font-weight:600;">📍 ${company.extraction.consolidation_note}</div>` : ""}
+        ${snapshotHtml(company)}
+        ${esgSnapshotHtml(company)}
+        ${reconciliationHtml(company)}
+        ${company.mapping ? `<div class="panel" style="text-align:center; color:var(--muted);"><span class="spin"></span> Mapping segments to NAICS + GICS codes...</div>` :
+          (company.extraction ? company.extraction.segments.map((s,si) => segmentCardHtml(company, s, si)).join("") : "")}
+      </div>
+    </div>`;
+  }
+
+  function bindCompanyCard(cardEl, company) {
+    cardEl.querySelector(".name-in").addEventListener("input", e => company.name = e.target.value);
+    cardEl.querySelector(".year-in").addEventListener("input", e => company.year = e.target.value);
+    cardEl.querySelector(".file-in").addEventListener("change", e => { const f = e.target.files[0]; if (f) { company.file = f; renderAll(); } });
+    cardEl.querySelector(".extract-btn").addEventListener("click", () => extractCompany(company));
+    cardEl.querySelector("[data-remove-company]").addEventListener("click", () => {
+      state.companies = state.companies.filter(c => c.id !== company.id);
+      renderAll();
+    });
+    const rmFile = cardEl.querySelector(".remove-file");
+    if (rmFile) rmFile.addEventListener("click", () => { company.file = null; renderAll(); });
+
+    cardEl.querySelectorAll(".seg-card").forEach(segCard => {
+      const si = +segCard.dataset.si;
+
+      segCard.querySelectorAll(".alloc-list").forEach(list => {
+        const system = list.dataset.system;
+        const sumEl = segCard.querySelector(`[data-sum][data-system="${system}"]`);
+        const recalcSum = () => {
+          const rows = list.querySelectorAll(".alloc-row");
+          let sum = 0; rows.forEach(r => sum += (+r.querySelector(".pct-in").value || 0));
+          sumEl.textContent = rows.length ? `Sum: ${sum}%` : "";
+          sumEl.className = "alloc-sum " + (Math.round(sum) === 100 ? "ok" : "bad");
+        };
+        list.querySelectorAll(".pct-in, .code-in, .title-in").forEach(inp => inp.addEventListener("input", recalcSum));
+        list.querySelectorAll(".alloc-remove").forEach(btn => btn.addEventListener("click", () => { btn.closest(".alloc-row").remove(); recalcSum(); }));
+
+        const addBtn = segCard.querySelector(`[data-add][data-system="${system}"]`);
+        if (addBtn) addBtn.addEventListener("click", () => {
+          const row = document.createElement("div");
+          row.className = "alloc-row";
+          row.innerHTML = `<input type="text" class="code-in" placeholder="code" /><input type="text" class="title-in" placeholder="${system.toUpperCase()} title" /><input type="number" class="pct-in" value="0" min="0" max="100" /><button class="alloc-remove">✕</button>`;
+          list.appendChild(row);
+          row.querySelectorAll(".pct-in, .code-in, .title-in").forEach(inp => inp.addEventListener("input", recalcSum));
+          row.querySelector(".alloc-remove").addEventListener("click", () => { row.remove(); recalcSum(); });
+          recalcSum();
+        });
+      });
+
+      const retryBtn = segCard.querySelector("[data-retry]");
+      if (retryBtn) retryBtn.addEventListener("click", () => retrySegmentMapping(company, si));
+    });
+  }
+
+  function renderAll() {
+    try {
+      const box = el("companiesList");
+      box.innerHTML = state.companies.map(c => companyCardHtml(c)).join("");
+      box.querySelectorAll(".company-card").forEach(cardEl => {
+        const cid = +cardEl.dataset.cid;
+        const company = state.companies.find(c => c.id === cid);
+        if (company) bindCompanyCard(cardEl, company);
+      });
+
+      const doneCount = state.companies.filter(c => c.extraction).length;
+      const totalCount = state.companies.length;
+      el("globalBadge").innerHTML = totalCount ? `<div class="badge ${doneCount===totalCount && totalCount>0 ? "good":"bad"}">${doneCount}/${totalCount} companies processed</div>` : "";
+    } catch (e) {
+      console.error("Render error:", e);
+      const box = el("errorBox");
+      if (box) box.textContent = "Display error: " + (e.message || e) + " — try re-processing if the screen looks wrong.";
+    }
+  }
+
+  el("addCompanyBtn").addEventListener("click", () => { state.companies.push(newCompany()); renderAll(); });
+  el("processAllBtn").addEventListener("click", processAll);
+  el("exportBtn").addEventListener("click", exportToExcel);
+
+  state.companies.push(newCompany());
+  renderApiKeyPanel();
+  renderAll();
+})();
+</script>
