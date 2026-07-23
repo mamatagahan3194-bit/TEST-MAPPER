@@ -437,6 +437,10 @@ RULES:
 
   // ===== GHG Scope 3 Check section =====
   const GHG_KEYWORDS = /scope\s*[123]|ghg|greenhouse gas|co2e?|carbon emissions?|emissions? (data|inventory|summary)|tco2e|climate.{0,10}(disclosure|data)|environmental (data|performance)|sustainability (data|metrics|report)|restat|methodology change|boundary change|category\s*\d{1,2}[:.]?\s*(purchased|capital|fuel|upstream|waste|business travel|employee commut|downstream|processing|use of sold|end.of.life|leased|franchise|investment)|energy (consumption|intensity)|market.based|location.based|net energy|renewable energy|kpi (data|table|summary)/i;
+  // Strong signal that a page is the actual detailed data table (not just a narrative mention of
+  // "Scope 1/2/3" elsewhere in the report) — weighted heavily in scanAndSelectPages so this kind of
+  // page consistently outranks pages that just mention emissions in passing.
+  const GHG_PRIORITY_KEYWORDS = /category\s*(1|2|3|4|5|6|7|8|9|10|11|12|13|14|15)\s*[:.]|scope\s*3.{0,15}categor|(scope\s*1.{0,40}scope\s*2.{0,40}scope\s*3)|(scope\s*1.{0,10}scope\s*2)|market.based.{0,60}location.based|key figures|data table|gri (content )?index|performance (data|indicators)|esg data|at a glance/i;
 
   function buildGhgMainSystem(latestYear, priorYear) {
     const ly = latestYear || "the latest reporting year";
@@ -486,7 +490,7 @@ RULES:
 
   function log(company, msg) { company.log.push(msg); renderAll(); }
 
-  async function scanAndSelectPages(pdf, maxPages, keywords) {
+  async function scanAndSelectPages(pdf, maxPages, keywords, priorityKeywords) {
     const total = pdf.numPages;
     const scored = [];
     for (let i = 1; i <= total; i++) {
@@ -494,7 +498,12 @@ RULES:
       const tc = await page.getTextContent();
       const pageText = tc.items.map(it => it.str).join(" ");
       const matches = pageText.match(keywords);
-      scored.push({ page: i, score: matches ? matches.length : 0 });
+      let score = matches ? matches.length : 0;
+      if (priorityKeywords) {
+        const pMatches = pageText.match(priorityKeywords);
+        if (pMatches) score += pMatches.length * 10; // strong signal pages (e.g. a real category-level data table) should dominate ranking over pages with a single passing mention
+      }
+      scored.push({ page: i, score });
     }
     let selected = scored.filter(s => s.score > 0).sort((a,b) => a.page - b.page);
     let usedFallbackSampling = false;
@@ -869,11 +878,11 @@ RULES:
       // is what caused the "413 Request Entity Too Large" error. Also returns the ranked list of
       // pages NOT initially selected, so a fallback pass can expand the search if nothing useful
       // was found — some GHG data tables are dense/image-heavy and don't score highly on a first pass.
-      const readAndExtract = async (file, keywords, maxPages, systemPrompt, instruction, label, batchPagesFn) => {
+      const readAndExtract = async (file, keywords, maxPages, systemPrompt, instruction, label, priorityKeywords) => {
         log(company, `Loading ${label}...`);
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-        const { selected, remainingRanked } = await scanAndSelectPages(pdf, maxPages, keywords);
+        const { selected, remainingRanked } = await scanAndSelectPages(pdf, maxPages, keywords, priorityKeywords);
         log(company, `${label}: found ${selected.length} relevant page(s).`);
         const runBatches = async (pages, tag) => {
           const batchSize = 5;
@@ -913,16 +922,16 @@ RULES:
       log(company, `Extracting Scope 1/2/3 data for ${latestYear} and materiality assessment...`);
       const mainInstruction = `Company: ${company.name||"Unknown"}\nLatest reporting year: ${latestYear}\nPrior reporting year: ${priorYear}\nExtract Scope 1/2/3 data per the schema from the pages shown above.`;
       let { merged: r, remainingRanked, pdf: mainPdf } = await readAndExtract(
-        company.fy2024File, GHG_KEYWORDS, 20, buildGhgMainSystem(latestYear, priorYear),
-        mainInstruction, `${latestYear} report`
+        company.fy2024File, GHG_KEYWORDS, 28, buildGhgMainSystem(latestYear, priorYear),
+        mainInstruction, `${latestYear} report`, GHG_PRIORITY_KEYWORDS
       );
 
       // Fallback: if no Scope 1/2/3 figures were found at all, the actual data table likely fell
       // outside the initially selected pages (common with dense KPI tables) — expand the search
       // rather than reporting "no data" when the report may well contain it further in.
       if (!hasAnyScopeData(r) && remainingRanked.length > 0) {
-        log(company, `No Scope 1/2/3 figures found in the initial scan — expanding search to ${Math.min(15, remainingRanked.length)} more page(s) before giving up.`);
-        const extra = remainingRanked.slice(0, 15);
+        log(company, `No Scope 1/2/3 figures found in the initial scan — expanding search to ${Math.min(20, remainingRanked.length)} more page(s) before giving up.`);
+        const extra = remainingRanked.slice(0, 20);
         const batchSize = 5;
         for (let i = 0; i < extra.length; i += batchSize) {
           const batchPages = extra.slice(i, i + batchSize);
@@ -951,9 +960,9 @@ RULES:
       if (hasFy2023Report) {
         try {
           const { merged: priorResult } = await readAndExtract(
-            company.fy2023File, GHG_KEYWORDS, 14, buildGhgPriorYearSystem(priorYear),
+            company.fy2023File, GHG_KEYWORDS, 20, buildGhgPriorYearSystem(priorYear),
             `Extract ${priorYear}'s own Scope 1/2/3 figures per the schema.`,
-            `${priorYear} own report`
+            `${priorYear} own report`, GHG_PRIORITY_KEYWORDS
           );
           r.fy2023OwnReport = priorResult;
         } catch (e) { log(company, `⚠ ${priorYear} report extraction failed (${e.message}) — continuing without it.`); }
@@ -961,9 +970,9 @@ RULES:
       if (hasFy2025Report) {
         try {
           const { merged: restResult } = await readAndExtract(
-            company.fy2025File, GHG_KEYWORDS, 14, buildGhgRestatementSystem(latestYear),
+            company.fy2025File, GHG_KEYWORDS, 20, buildGhgRestatementSystem(latestYear),
             `Check whether this report restates ${latestYear} Scope 1/2/3 figures, per the schema.`,
-            "newer report (for restatement check)"
+            "newer report (for restatement check)", GHG_PRIORITY_KEYWORDS
           );
           r.fy2025Restatement = restResult;
         } catch (e) { log(company, `⚠ Newer-report extraction failed (${e.message}) — continuing without it.`); }
