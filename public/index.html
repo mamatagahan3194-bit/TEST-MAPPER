@@ -856,45 +856,19 @@ RULES:
   function applyGhgDecisionTree(r, hasFy2023Report, hasFy2025Report) {
     const notes = [];
     let flaggedGreen = false;
-    let finalScope3 = r.fy2024.scope3 ? r.fy2024.scope3.value : null;
-
-    const prior = r.fy2023_comparative_shown_in_this_report ? r.fy2023_comparative_shown_in_this_report.scope3.value : null;
+    const finalScope3 = r.fy2024.scope3 ? r.fy2024.scope3.value : null;
     const deltaPct = computeGhgDeltaPct(r);
     const reason = r.stated_reason_for_change;
-    let deltaHandled = false;
 
-    if (deltaPct != null && Math.abs(deltaPct) > 30) {
-      if (deltaPct < 0) {
-        if (reason && reason.found && (reason.type === "methodology_change" || reason.type === "boundary_change")) {
-          notes.push(`Delta ${deltaPct.toFixed(1)}%. Methodology/boundary change stated: "${reason.quote || ""}" (p.${reason.page || "?"}). Value treated as correct — no changes needed.`);
-          flaggedGreen = true; deltaHandled = true;
-        } else if (hasFy2025Report && r.fy2025Restatement && r.fy2025Restatement.appears_restated && r.fy2025Restatement.fy2024_restated.scope3.value != null) {
-          finalScope3 = r.fy2025Restatement.fy2024_restated.scope3.value;
-          notes.push(`Delta ${deltaPct.toFixed(1)}% with no stated reason. FY2025 report shows a restated FY2024 Scope 3 value of ${finalScope3} (p.${r.fy2025Restatement.page || "?"}) — using restated figure.`);
-          flaggedGreen = true; deltaHandled = true;
-        } else if (hasFy2023Report && r.fy2023OwnReport && r.fy2023OwnReport.scope3.value != null && prior != null) {
-          const ownFy2023 = r.fy2023OwnReport.scope3.value;
-          if (ownFy2023 < prior * 0.7) {
-            finalScope3 = null;
-            notes.push(`Delta ${deltaPct.toFixed(1)}% with no stated reason. FY2023's own report shows Scope 3 of ${ownFy2023}, materially lower than the ${prior} comparative shown in the FY2024 report — indicates delayed/lagged full Scope 3 reporting. FY2024 value blanked; treat FY2023 (full, delayed) as the estimated proxy for FY2024.`);
-            flaggedGreen = true; deltaHandled = true;
-          }
-        }
-        if (!deltaHandled) {
-          notes.push(`Delta ${deltaPct.toFixed(1)}% — no methodology change stated, and no FY2025/FY2023 report provided to investigate further. Upload FY2025 (for restatement check) or FY2023's own report (for delayed-reporting check) to resolve.`);
-        }
+    if (deltaPct != null) {
+      if (reason && reason.found) {
+        notes.push(`Delta ${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}%. Stated reason: ${(reason.type||"").replace(/_/g," ")} — "${reason.quote || ""}" (p.${reason.page || "?"}).`);
+        flaggedGreen = true;
       } else {
-        if (reason && reason.found) {
-          notes.push(`Delta +${deltaPct.toFixed(1)}%. Stated reason: ${reason.type.replace(/_/g," ")} — "${reason.quote || ""}" (p.${reason.page || "?"}).`);
-        } else {
-          notes.push(`Delta +${deltaPct.toFixed(1)}% with no reason stated in the filing — assuming methodology change or additional Scope 3 categories now reported; not independently confirmed.`);
-        }
-        deltaHandled = true;
+        notes.push(`Delta ${deltaPct >= 0 ? "+" : ""}${deltaPct.toFixed(1)}% — no reason stated in the filing for this change.`);
       }
-    }
-
-    if (!flaggedGreen && notes.length === 0) {
-      notes.push(deltaPct != null ? `Delta ${deltaPct.toFixed(1)}% — within the ±30% threshold, no action needed.` : "Delta could not be calculated (missing current or prior figure).");
+    } else {
+      notes.push("Delta could not be calculated (missing current or prior figure).");
     }
 
     return { finalScope3, deltaPct, notes, flaggedGreen };
