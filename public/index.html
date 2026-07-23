@@ -961,7 +961,7 @@ RULES:
             }
             content.push({ type:"text", text: instruction });
             try {
-              const partial = await callClaudeWithRetry(systemPrompt, content, 2, { max_tokens: 1200 });
+              const partial = await callClaudeWithRetry(systemPrompt, content, 2, { max_tokens: 3200 });
               merged = mergeGhgPartial(merged, partial);
               if (ghgDataRichness(partial) > ghgDataRichness(bestPartial)) bestPartial = partial;
             } catch (e) {
@@ -1013,7 +1013,7 @@ RULES:
           }
           content.push({ type:"text", text: mainInstruction });
           try {
-            const partial = await callClaudeWithRetry(buildGhgMainSystem(latestYear, priorYear), content, 2, { max_tokens: 1200 });
+            const partial = await callClaudeWithRetry(buildGhgMainSystem(latestYear, priorYear), content, 2, { max_tokens: 3200 });
             const richerThanBefore = ghgDataRichness(partial) > ghgDataRichness(r);
             r = mergeGhgPartial(r, partial);
             if (richerThanBefore && ghgDataRichness(partial) > 0) {
