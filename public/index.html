@@ -815,6 +815,7 @@ RULES:
     let flaggedGreen = false;
     let finalScope3 = r.fy2024.scope3 ? r.fy2024.scope3.value : null;
 
+    const prior = r.fy2023_comparative_shown_in_this_report ? r.fy2023_comparative_shown_in_this_report.scope3.value : null;
     const deltaPct = computeGhgDeltaPct(r);
     const reason = r.stated_reason_for_change;
     let deltaHandled = false;
