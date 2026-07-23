@@ -2,27 +2,36 @@
 // environment variable — never exposed to the browser.
 //
 // Security layers, in order of enforcement:
-// 1. Origin check — rejects requests from browser pages on other domains (doesn't stop
-//    non-browser tools with a spoofed Origin header, but blocks casual cross-site embedding).
-// 2. Shared access code — rejects any request missing the correct X-Access-Code header.
-//    This is the main defense: it's baked into the frontend's own JS, so a random person who
-//    stumbles on this URL (search engine, leaked link) without the actual app can't call it.
-// 3. Server-side daily limit per user-id — enforced here, not just in the browser, so it can't
-//    be bypassed by clearing localStorage. Requires a Vercel KV database to be linked to this
-//    project (see README) — if KV isn't configured, this step is skipped (fails open) rather
-//    than blocking all usage, so the app still works before you've set up KV.
-
-let kv = null;
-try {
-  // Loaded dynamically so the function still works even if @vercel/kv isn't installed/configured yet.
-  kv = require("@vercel/kv").kv;
-} catch (e) {
-  kv = null;
-}
+// 1. Shared access code — rejects any request missing the correct X-Access-Code header.
+// 2. Server-side daily limit per user-id — via Upstash Redis's REST API (no SDK/package needed,
+//    just plain fetch calls). If Upstash isn't configured yet, this step is skipped (fails open)
+//    rather than blocking all usage.
+//
+// Note: an origin check (rejecting requests from other domains) was removed — it caused false-
+// positive rejections in practice (Vercel preview URLs, proxy/redirect quirks affecting the Origin
+// header) and was the lowest-value layer anyway. The access code + login gate + daily limit are
+// what actually matter for this use case.
 
 const ACCESS_CODE = process.env.ACCESS_CODE;
-const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN; // e.g. https://your-site.vercel.app
 const DAILY_LIMIT_PER_USER = parseInt(process.env.DAILY_LIMIT_PER_USER || "10", 10);
+const UPSTASH_URL = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+
+async function upstashIncr(key) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return null;
+  const res = await fetch(`${UPSTASH_URL}/incr/${encodeURIComponent(key)}`, {
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+  });
+  const data = await res.json();
+  return data.result;
+}
+
+async function upstashExpire(key, seconds) {
+  if (!UPSTASH_URL || !UPSTASH_TOKEN) return;
+  await fetch(`${UPSTASH_URL}/expire/${encodeURIComponent(key)}/${seconds}`, {
+    headers: { Authorization: `Bearer ${UPSTASH_TOKEN}` },
+  });
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
@@ -30,35 +39,27 @@ export default async function handler(req, res) {
     return;
   }
 
-  // --- Layer 1: Origin check ---
-  const origin = req.headers.origin || req.headers.referer || "";
-  if (ALLOWED_ORIGIN && origin && !origin.startsWith(ALLOWED_ORIGIN)) {
-    res.status(403).json({ error: { message: "Requests from this origin are not allowed." } });
-    return;
-  }
-
-  // --- Layer 2: shared access code ---
+  // --- Layer 1: shared access code ---
   const providedCode = req.headers["x-access-code"];
   if (ACCESS_CODE && providedCode !== ACCESS_CODE) {
     res.status(401).json({ error: { message: "Missing or invalid access code." } });
     return;
   }
 
-  // --- Layer 3: server-side daily limit, keyed by the user-id the frontend sends ---
+  // --- Layer 2: server-side daily limit, keyed by the user-id the frontend sends ---
   const userId = (req.headers["x-user-id"] || "unknown").toString().slice(0, 100);
-  if (kv) {
+  if (UPSTASH_URL && UPSTASH_TOKEN) {
     try {
       const today = new Date().toISOString().slice(0, 10);
       const usageKey = `usage:${today}:${userId}`;
-      const count = await kv.incr(usageKey);
-      if (count === 1) await kv.expire(usageKey, 60 * 60 * 26); // ~26h TTL, safety margin past midnight
-      if (count > DAILY_LIMIT_PER_USER) {
+      const count = await upstashIncr(usageKey);
+      if (count === 1) await upstashExpire(usageKey, 60 * 60 * 26); // ~26h TTL, safety margin past midnight
+      if (count != null && count > DAILY_LIMIT_PER_USER) {
         res.status(429).json({ error: { message: `Daily limit of ${DAILY_LIMIT_PER_USER} requests reached for "${userId}". Resets at midnight. Contact your admin if you need a higher limit.` } });
         return;
       }
-    } catch (kvErr) {
-      // KV not configured yet, or a transient error — don't block usage, just skip enforcement.
-      console.error("KV rate-limit check skipped:", kvErr.message);
+    } catch (upstashErr) {
+      console.error("Upstash rate-limit check skipped:", upstashErr.message);
     }
   }
 
