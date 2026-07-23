@@ -457,11 +457,12 @@ RULES:
     return `You are a GHG accounting specialist reviewing a company's ${ly} sustainability/annual report — this is the latest year being checked — for Scope 1, 2, and 3 emissions data, with a focus on producing solid, verifiable Scope 3 data. You are shown selected page images (each preceded by its page number).
 RULES:
 1. Extract Scope 1, Scope 2 (location and/or market-based if both given), and Scope 3 total emissions for ${ly} — as directly and explicitly stated, never calculated or estimated by you.
-2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report.
+1b. CRITICAL — COLUMN IDENTIFICATION. Multi-year trend tables (common in sustainability reports, often showing 3-5+ years of data side by side) list years in EITHER newest-first OR oldest-first order depending on the company's convention — NEVER assume which column is ${ly} based on position (e.g. "leftmost" or "first"). Always locate the actual year number printed in each column's header (e.g. "2025", "2024") and match values strictly by that printed label to ${ly} and ${py} specifically. If a table's column headers are unclear or you cannot confidently match a column to ${ly}, leave the value null and note the ambiguity in data_gaps rather than guessing based on column order.
+2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report. Apply rule 1b here too — match by the printed year label, not position.
 3. SCOPE 3 CATEGORY-BY-CATEGORY CHECK — MANDATORY FULL COVERAGE. scope3_categories_disclosed MUST contain exactly 15 entries, one for each GHG Protocol Scope 3 category number (1 through 15), even for categories not mentioned at all in the report. Never omit a category number. For EACH of the 15:
-   a. disclosed: true if the report gives it a specific value, false otherwise.
+   a. disclosed: true if the report gives it a specific value FOR ${ly} SPECIFICALLY (per rule 1b's column-matching), false otherwise.
    b. value: the figure if disclosed, else null.
-   c. expected_material_for_sector: true/false — your judgment of whether this category would typically be expected to be material for a company in this sector, based on standard GHG Protocol / CDP Technical Note v3.0-style sector relevance guidance (e.g. Category 11 "Use of sold products" is typically material for automotive/durable goods/equipment manufacturers; Category 1 "Purchased goods and services" is typically material for most manufacturers and retailers; Category 6/7 travel/commuting are typically minor for asset-heavy industrials but more relevant for services/office-based companies; Category 15 "Investments" is typically material only for financial institutions). Base this on company_business_description, not on what the company itself chose to report.
+   c. expected_material_for_sector: true/false — your judgment of whether this category would typically be expected to be material for a company in this sector, based on standard GHG Protocol / CDP Technical Note v3.0-style sector relevance guidance (e.g. Category 11 "Use of sold products" is typically material for automotive/durable goods/equipment manufacturers — including industrial equipment, machinery, and engineered components if they consume energy or fuel during use; Category 1 "Purchased goods and services" is typically material for most manufacturers and retailers; Category 6/7 travel/commuting are typically minor for asset-heavy industrials but more relevant for services/office-based companies; Category 15 "Investments" is typically material only for financial institutions). Base this ONLY on company_business_description and standard sector practice — NEVER mark a category as "not material" merely because the company didn't disclose it or because doing so would avoid flagging a gap. If you are noting a category as a data gap elsewhere in your response, expected_material_for_sector for that same category must be consistent with that concern, not contradict it.
    d. materiality_rationale: one short phrase for why you rated it material or not material for this sector (e.g. "core input for manufacturing" or "not applicable — no financed investments").
    The 15 GHG Protocol Scope 3 categories are: 1 Purchased goods and services, 2 Capital goods, 3 Fuel- and energy-related activities, 4 Upstream transportation and distribution, 5 Waste generated in operations, 6 Business travel, 7 Employee commuting, 8 Upstream leased assets, 9 Downstream transportation and distribution, 10 Processing of sold products, 11 Use of sold products, 12 End-of-life treatment of sold products, 13 Downstream leased assets, 14 Franchises, 15 Investments.
 4. Extract any explicit statement of a METHODOLOGY CHANGE, RESTATEMENT, BOUNDARY CHANGE, CORPORATE ACTION (acquisition, merger, divestiture, demerger), or reason for a change in emissions figures year-over-year, quoting the relevant text (under 20 words) and its page number. If the report is silent on this, say so explicitly — do not infer a reason that isn't stated.
@@ -802,16 +803,19 @@ RULES:
 
   // Applies the exact Scope 3 review decision tree: delta magnitude/direction, methodology-change
   // detection, restatement lookup, delayed-reporting pattern, and materiality fallback.
+  function computeGhgDeltaPct(r) {
+    const cur = r.fy2024 && r.fy2024.scope3 ? r.fy2024.scope3.value : null;
+    const prior = r.fy2023_comparative_shown_in_this_report ? r.fy2023_comparative_shown_in_this_report.scope3.value : null;
+    if (cur != null && prior != null && prior !== 0) return ((cur - prior) / prior) * 100;
+    return null;
+  }
+
   function applyGhgDecisionTree(r, hasFy2023Report, hasFy2025Report) {
     const notes = [];
     let flaggedGreen = false;
     let finalScope3 = r.fy2024.scope3 ? r.fy2024.scope3.value : null;
 
-    const cur = r.fy2024.scope3 ? r.fy2024.scope3.value : null;
-    const prior = r.fy2023_comparative_shown_in_this_report ? r.fy2023_comparative_shown_in_this_report.scope3.value : null;
-    let deltaPct = null;
-    if (cur != null && prior != null && prior !== 0) deltaPct = ((cur - prior) / prior) * 100;
-
+    const deltaPct = computeGhgDeltaPct(r);
     const reason = r.stated_reason_for_change;
     let deltaHandled = false;
 
@@ -1032,25 +1036,41 @@ RULES:
       const hasFy2023Report = !!company.fy2023File;
       const hasFy2025Report = !!company.fy2025File;
 
-      if (hasFy2023Report) {
-        try {
-          const { merged: priorResult } = await readAndExtract(
-            company.fy2023File, GHG_KEYWORDS, 20, buildGhgPriorYearSystem(priorYear),
-            `Extract ${priorYear}'s own Scope 1/2/3 figures per the schema.`,
-            `${priorYear} own report`, GHG_PRIORITY_KEYWORDS
-          );
-          r.fy2023OwnReport = priorResult;
-        } catch (e) { log(company, `⚠ ${priorYear} report extraction failed (${e.message}) — continuing without it.`); }
-      }
-      if (hasFy2025Report) {
-        try {
-          const { merged: restResult } = await readAndExtract(
-            company.fy2025File, GHG_KEYWORDS, 20, buildGhgRestatementSystem(latestYear),
-            `Check whether this report restates ${latestYear} Scope 1/2/3 figures, per the schema.`,
-            "newer report (for restatement check)", GHG_PRIORITY_KEYWORDS
-          );
-          r.fy2025Restatement = restResult;
-        } catch (e) { log(company, `⚠ Newer-report extraction failed (${e.message}) — continuing without it.`); }
+      // Efficiency check: only fetch the optional prior/newer reports when the latest report
+      // genuinely doesn't already answer the question on its own. If it already has both years'
+      // Scope 3 figures AND either the delta is within the normal ±30% range OR the company already
+      // explains the change in its own footnotes, there's nothing left to investigate — skip the
+      // extra documents entirely, even if uploaded, to save the extra API cost.
+      const earlyDeltaPct = computeGhgDeltaPct(r);
+      const hasBothYears = r.fy2024 && r.fy2024.scope3 && r.fy2024.scope3.value != null
+        && r.fy2023_comparative_shown_in_this_report && r.fy2023_comparative_shown_in_this_report.scope3.value != null;
+      const reasonAlreadyStated = r.stated_reason_for_change && r.stated_reason_for_change.found;
+      const deltaWithinThreshold = earlyDeltaPct == null || Math.abs(earlyDeltaPct) <= 30;
+      const needsFurtherInvestigation = !(hasBothYears && (deltaWithinThreshold || reasonAlreadyStated));
+
+      if (!needsFurtherInvestigation) {
+        log(company, `${latestYear} report already provides both years' Scope 3 figures${reasonAlreadyStated ? " with a stated reason for the change" : (deltaWithinThreshold ? " and the delta is within the ±30% threshold" : "")} — skipping prior/newer report checks to save cost.`);
+      } else {
+        if (hasFy2023Report) {
+          try {
+            const { merged: priorResult } = await readAndExtract(
+              company.fy2023File, GHG_KEYWORDS, 20, buildGhgPriorYearSystem(priorYear),
+              `Extract ${priorYear}'s own Scope 1/2/3 figures per the schema.`,
+              `${priorYear} own report`, GHG_PRIORITY_KEYWORDS
+            );
+            r.fy2023OwnReport = priorResult;
+          } catch (e) { log(company, `⚠ ${priorYear} report extraction failed (${e.message}) — continuing without it.`); }
+        }
+        if (hasFy2025Report) {
+          try {
+            const { merged: restResult } = await readAndExtract(
+              company.fy2025File, GHG_KEYWORDS, 20, buildGhgRestatementSystem(latestYear),
+              `Check whether this report restates ${latestYear} Scope 1/2/3 figures, per the schema.`,
+              "newer report (for restatement check)", GHG_PRIORITY_KEYWORDS
+            );
+            r.fy2025Restatement = restResult;
+          } catch (e) { log(company, `⚠ Newer-report extraction failed (${e.message}) — continuing without it.`); }
+        }
       }
 
       // Final sanity check: if real Scope figures were actually found anywhere in the process, a
@@ -1117,6 +1137,7 @@ RULES:
         "Final Scope 3 Value (after review)": d.finalScope3 != null ? d.finalScope3 : "BLANK — see comments",
         "Status": d.flaggedGreen ? "✅ Reviewed — see comments" : "No action needed",
         "Materiality Rating": r.materiality_assessment ? r.materiality_assessment.rating : "",
+        "Stated Reason for Change": r.stated_reason_for_change && r.stated_reason_for_change.found ? `${(r.stated_reason_for_change.type||"").replace(/_/g," ")}: "${r.stated_reason_for_change.quote||""}" (p.${r.stated_reason_for_change.page||"?"})` : "Not stated in scanned pages",
         "Material Categories Covered": cov.materialCovered.map(x=>x.category_number).join(", "),
         "Material Categories Missing": cov.materialMissing.map(x=>x.category_number).join(", "),
         "Comments": d.notes.join(" | "),
@@ -1558,6 +1579,7 @@ RULES:
           </div>
           <div style="margin-top:10px;"><span class="label">Final Scope 3 value (after review)</span><div style="font-weight:700;">${d.finalScope3!=null ? d.finalScope3.toLocaleString() : "BLANK — see comments below"}</div></div>
           ${r.materiality_assessment ? `<div class="quote" style="font-style:normal;margin-top:8px;"><b>Materiality:</b> ${r.materiality_assessment.rating} — ${r.materiality_assessment.rationale}</div>` : ""}
+          ${r.stated_reason_for_change && r.stated_reason_for_change.found ? `<div class="quote" style="font-style:normal;margin-top:8px;color:var(--blue-dark);"><b>Company-stated reason for change:</b> ${(r.stated_reason_for_change.type||"").replace(/_/g," ")} — "${r.stated_reason_for_change.quote||""}"${r.stated_reason_for_change.page ? ` (p.${r.stated_reason_for_change.page})` : ""}</div>` : `<div class="quote" style="margin-top:8px;">No explicit reason for the year-over-year change was stated in the scanned pages.</div>`}
           ${(r.scope3_categories_disclosed||[]).length ? `
             <div class="label" style="margin-top:10px;">Scope 3 category coverage (${(r.scope3_categories_disclosed||[]).length} of 15 checked)</div>
             <div class="matrix-box" style="margin-top:4px;">
