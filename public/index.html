@@ -436,7 +436,7 @@ RULES:
 {"sector": string, "industry_group": string, "rationale": string}`;
 
   // ===== GHG Scope 3 Check section =====
-  const GHG_KEYWORDS = /scope\s*[123]|ghg|greenhouse gas|co2e?|carbon emissions?|emissions? (data|inventory|summary)|tco2e|climate.{0,10}(disclosure|data)|environmental (data|performance)|sustainability (data|metrics|report)|restat|methodology change|boundary change/i;
+  const GHG_KEYWORDS = /scope\s*[123]|ghg|greenhouse gas|co2e?|carbon emissions?|emissions? (data|inventory|summary)|tco2e|climate.{0,10}(disclosure|data)|environmental (data|performance)|sustainability (data|metrics|report)|restat|methodology change|boundary change|category\s*\d{1,2}[:.]?\s*(purchased|capital|fuel|upstream|waste|business travel|employee commut|downstream|processing|use of sold|end.of.life|leased|franchise|investment)|energy (consumption|intensity)|market.based|location.based|net energy|renewable energy|kpi (data|table|summary)/i;
 
   function buildGhgMainSystem(latestYear, priorYear) {
     const ly = latestYear || "the latest reporting year";
@@ -864,43 +864,85 @@ RULES:
       // Reads a document, scans for relevant pages, and runs extraction in small batches (same
       // pattern as the revenue tool) — sending too many full-resolution page images in one request
       // is what caused the "413 Request Entity Too Large" error.
-      const readAndExtract = async (file, keywords, maxPages, systemPrompt, instruction, label) => {
+      // Reads a document, scans for relevant pages, and runs extraction in small batches (same
+      // pattern as the revenue tool) — sending too many full-resolution page images in one request
+      // is what caused the "413 Request Entity Too Large" error. Also returns the ranked list of
+      // pages NOT initially selected, so a fallback pass can expand the search if nothing useful
+      // was found — some GHG data tables are dense/image-heavy and don't score highly on a first pass.
+      const readAndExtract = async (file, keywords, maxPages, systemPrompt, instruction, label, batchPagesFn) => {
         log(company, `Loading ${label}...`);
         const buf = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: buf }).promise;
-        const { selected } = await scanAndSelectPages(pdf, maxPages, keywords);
+        const { selected, remainingRanked } = await scanAndSelectPages(pdf, maxPages, keywords);
         log(company, `${label}: found ${selected.length} relevant page(s).`);
-        const batchSize = 5;
-        let merged = null;
-        for (let i = 0; i < selected.length; i += batchSize) {
-          const batchPages = selected.slice(i, i + batchSize);
-          log(company, `${label}: reading batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
-          const content = [];
-          for (const p of batchPages) {
-            const b64 = await renderPageToBase64(pdf, p, 1.8);
-            content.push({ type:"text", text:`Page ${p}:` });
-            content.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+        const runBatches = async (pages, tag) => {
+          const batchSize = 5;
+          let merged = null;
+          for (let i = 0; i < pages.length; i += batchSize) {
+            const batchPages = pages.slice(i, i + batchSize);
+            log(company, `${label}${tag}: reading batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
+            const content = [];
+            for (const p of batchPages) {
+              const b64 = await renderPageToBase64(pdf, p, 1.8);
+              content.push({ type:"text", text:`Page ${p}:` });
+              content.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+            }
+            content.push({ type:"text", text: instruction });
+            try {
+              const partial = await callClaudeWithRetry(systemPrompt, content, 2, { max_tokens: 1200 });
+              merged = mergeGhgPartial(merged, partial);
+            } catch (e) {
+              log(company, `⚠ ${label}${tag} batch ${Math.floor(i/batchSize)+1} failed to parse (${e.message}) — skipping.`);
+            }
           }
-          content.push({ type:"text", text: instruction });
-          try {
-            const partial = await callClaudeWithRetry(systemPrompt, content, 2, { max_tokens: 1200 });
-            merged = mergeGhgPartial(merged, partial);
-          } catch (e) {
-            log(company, `⚠ ${label} batch ${Math.floor(i/batchSize)+1} failed to parse (${e.message}) — skipping.`);
-          }
-        }
-        return merged;
+          return merged;
+        };
+        let merged = await runBatches(selected, "");
+        return { merged, remainingRanked, pdf };
       };
+
+      const hasAnyScopeData = (r) => r && r.fy2024 && (
+        (r.fy2024.scope1 && r.fy2024.scope1.value != null) ||
+        (r.fy2024.scope2 && r.fy2024.scope2.value != null) ||
+        (r.fy2024.scope3 && r.fy2024.scope3.value != null)
+      );
 
       const latestYear = (company.latestYear || "").trim() || "the latest reporting year";
       const priorYear = (company.priorYear || "").trim() || "the prior reporting year";
 
       log(company, `Extracting Scope 1/2/3 data for ${latestYear} and materiality assessment...`);
-      const r = await readAndExtract(
+      const mainInstruction = `Company: ${company.name||"Unknown"}\nLatest reporting year: ${latestYear}\nPrior reporting year: ${priorYear}\nExtract Scope 1/2/3 data per the schema from the pages shown above.`;
+      let { merged: r, remainingRanked, pdf: mainPdf } = await readAndExtract(
         company.fy2024File, GHG_KEYWORDS, 20, buildGhgMainSystem(latestYear, priorYear),
-        `Company: ${company.name||"Unknown"}\nLatest reporting year: ${latestYear}\nPrior reporting year: ${priorYear}\nExtract Scope 1/2/3 data per the schema from the pages shown above.`,
-        `${latestYear} report`
+        mainInstruction, `${latestYear} report`
       );
+
+      // Fallback: if no Scope 1/2/3 figures were found at all, the actual data table likely fell
+      // outside the initially selected pages (common with dense KPI tables) — expand the search
+      // rather than reporting "no data" when the report may well contain it further in.
+      if (!hasAnyScopeData(r) && remainingRanked.length > 0) {
+        log(company, `No Scope 1/2/3 figures found in the initial scan — expanding search to ${Math.min(15, remainingRanked.length)} more page(s) before giving up.`);
+        const extra = remainingRanked.slice(0, 15);
+        const batchSize = 5;
+        for (let i = 0; i < extra.length; i += batchSize) {
+          const batchPages = extra.slice(i, i + batchSize);
+          log(company, `${latestYear} report (fallback): reading batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
+          const content = [];
+          for (const p of batchPages) {
+            const b64 = await renderPageToBase64(mainPdf, p, 1.8);
+            content.push({ type:"text", text:`Page ${p}:` });
+            content.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+          }
+          content.push({ type:"text", text: mainInstruction });
+          try {
+            const partial = await callClaudeWithRetry(buildGhgMainSystem(latestYear, priorYear), content, 2, { max_tokens: 1200 });
+            r = mergeGhgPartial(r, partial);
+          } catch (e) {
+            log(company, `⚠ Fallback batch ${Math.floor(i/batchSize)+1} failed to parse (${e.message}) — skipping.`);
+          }
+        }
+      }
+
       if (!r) throw new Error(`All batches failed — no data could be extracted from the ${latestYear} report.`);
 
       const hasFy2023Report = !!company.fy2023File;
@@ -908,20 +950,22 @@ RULES:
 
       if (hasFy2023Report) {
         try {
-          r.fy2023OwnReport = await readAndExtract(
+          const { merged: priorResult } = await readAndExtract(
             company.fy2023File, GHG_KEYWORDS, 14, buildGhgPriorYearSystem(priorYear),
             `Extract ${priorYear}'s own Scope 1/2/3 figures per the schema.`,
             `${priorYear} own report`
           );
+          r.fy2023OwnReport = priorResult;
         } catch (e) { log(company, `⚠ ${priorYear} report extraction failed (${e.message}) — continuing without it.`); }
       }
       if (hasFy2025Report) {
         try {
-          r.fy2025Restatement = await readAndExtract(
+          const { merged: restResult } = await readAndExtract(
             company.fy2025File, GHG_KEYWORDS, 14, buildGhgRestatementSystem(latestYear),
             `Check whether this report restates ${latestYear} Scope 1/2/3 figures, per the schema.`,
             "newer report (for restatement check)"
           );
+          r.fy2025Restatement = restResult;
         } catch (e) { log(company, `⚠ Newer-report extraction failed (${e.message}) — continuing without it.`); }
       }
 
