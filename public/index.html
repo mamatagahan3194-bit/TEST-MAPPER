@@ -202,25 +202,27 @@
 
   // Daily usage quota — a soft per-browser limit, not a hard security boundary (someone could clear
   // localStorage to reset it), but it paces the shared key's budget evenly across the team instead of
-  // letting one person front-load a whole period's usage into a single day. Default of 2/user/day means
-  // 11 analysts working ~22 days/month land around 484 companies/month worst case — still tune this
-  // against real measured cost per company once you have it; the math in this comment is a starting
-  // point, not a guarantee. Adjustable in Advanced settings.
-  const DEFAULT_DAILY_LIMIT = 4; // 11 analysts × 4/day × ~22 working days ≈ 968/month → ~$19-34/month at the ~$0.02-0.035/company estimate, which is OVER the ₹1500 (~$15.63) monthly budget at both ends of that range. Set by explicit request over the stricter budget-fit number (3/day) — monitor real spend closely (Google Cloud Billing alert) since this is no longer conservatively inside budget on paper.
+  // letting one person front-load a whole period's usage into a single day. Tracked separately per
+  // tab (Revenue & GICS vs GHG Scope 3 Check) since they have different cost profiles — a GHG check
+  // can involve up to 3 documents per company, so combining them into one shared pool would let GHG
+  // usage silently crowd out Revenue usage or vice versa.
+  const DEFAULT_DAILY_LIMIT = 6; // per tab, per analyst — 6 Revenue + 6 GHG = up to 12 checks/day/person
   function currentDayKey() { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; }
-  function getUsage() {
+  function getUsage(tab) {
+    const key = `usage_tracker_${tab}`;
     let raw;
-    try { raw = JSON.parse(localStorage.getItem("usage_tracker") || "{}"); } catch(e) { raw = {}; }
+    try { raw = JSON.parse(localStorage.getItem(key) || "{}"); } catch(e) { raw = {}; }
     if (raw.day !== currentDayKey()) raw = { day: currentDayKey(), count: 0 };
     return raw;
   }
-  function getDailyLimit() { return parseInt(localStorage.getItem("daily_limit") || String(DEFAULT_DAILY_LIMIT), 10); }
-  function recordUsage() {
-    const u = getUsage();
+  function getDailyLimit(tab) { return parseInt(localStorage.getItem(`daily_limit_${tab}`) || String(DEFAULT_DAILY_LIMIT), 10); }
+  function recordUsage(tab) {
+    const key = `usage_tracker_${tab}`;
+    const u = getUsage(tab);
     u.count += 1;
-    localStorage.setItem("usage_tracker", JSON.stringify(u));
+    localStorage.setItem(key, JSON.stringify(u));
   }
-  function usageRemaining() { return Math.max(0, getDailyLimit() - getUsage().count); }
+  function usageRemaining(tab) { return Math.max(0, getDailyLimit(tab) - getUsage(tab).count); }
 
 
   let idCounter = 1;
@@ -615,11 +617,11 @@ RULES:
 
   async function extractCompany(company) {
     if (!company.file) { company.error = "Upload a PDF first."; renderAll(); return; }
-    if (usageRemaining() <= 0) {
-      company.error = `Daily limit reached (${getDailyLimit()} companies). This resets at midnight. Contact your admin if you need a higher limit.`;
+    if (usageRemaining("revenue") <= 0) {
+      company.error = `Daily limit reached (${getDailyLimit("revenue")} companies) for Revenue &amp; GICS checks. This resets at midnight. Contact your admin if you need a higher limit.`;
       renderAll(); return;
     }
-    recordUsage();
+    recordUsage("revenue");
     renderApiKeyPanel();
     company.loading = true; company.log = []; company.error = null; company.extraction = null; company.mapped = null;
     renderAll();
@@ -972,6 +974,12 @@ RULES:
 
   async function extractGhgCompany(company) {
     if (!company.fy2024File) { company.error = "Upload the FY2024 report first."; renderAll(); return; }
+    if (usageRemaining("ghg") <= 0) {
+      company.error = `Daily limit reached (${getDailyLimit("ghg")} companies) for GHG Scope 3 checks. This resets at midnight. Contact your admin if you need a higher limit.`;
+      renderAll(); return;
+    }
+    recordUsage("ghg");
+    renderApiKeyPanel();
     company.loading = true; company.log = []; company.error = null; company.result = null;
     renderAll();
     try {
@@ -1341,13 +1349,29 @@ RULES:
     const saved = localStorage.getItem("gemini_api_key");
     const savedModel = localStorage.getItem("gemini_model") || DEFAULT_MODEL;
     const keyLooksValid = saved && (saved.startsWith("AIza") || saved.startsWith("AQ."));
-    const used = getUsage().count;
-    const limit = getDailyLimit();
-    const remaining = usageRemaining();
-    const usagePct = Math.min(100, Math.round((used / limit) * 100));
-    const tone = remaining === 0 ? { c:"var(--red)", bg:"var(--red-bg)", bd:"var(--red-dark)" }
-      : (usagePct > 80 ? { c:"var(--amber-dark)", bg:"var(--amber-bg)", bd:"var(--amber-dark)" }
-      : { c:"var(--teal-dark)", bg:"var(--teal-bg)", bd:"var(--teal-dark)" });
+
+    const tabUsage = (tab) => {
+      const used = getUsage(tab).count;
+      const limit = getDailyLimit(tab);
+      const remaining = usageRemaining(tab);
+      const usagePct = Math.min(100, Math.round((used / limit) * 100));
+      const tone = remaining === 0 ? { c:"var(--red)", bg:"var(--red-bg)", bd:"var(--red-dark)" }
+        : (usagePct > 80 ? { c:"var(--amber-dark)", bg:"var(--amber-bg)", bd:"var(--amber-dark)" }
+        : { c:"var(--teal-dark)", bg:"var(--teal-bg)", bd:"var(--teal-dark)" });
+      return { used, limit, remaining, usagePct, tone };
+    };
+    const rev = tabUsage("revenue");
+    const ghg = tabUsage("ghg");
+
+    const usageBarUser = (label, u) => `
+      <div style="margin-top:10px;">
+        <div style="font-size:11px; color:var(--muted2); text-transform:uppercase; letter-spacing:0.04em; font-weight:600; margin-bottom:4px;">${label} — today's usage</div>
+        <div style="height:10px; background:var(--border); border-radius:5px; overflow:hidden;">
+          <div style="height:100%; width:${u.usagePct}%; background:linear-gradient(90deg, var(--teal), var(--blue)); border-radius:5px; transition:width 0.3s;"></div>
+        </div>
+        ${u.remaining === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px; font-weight:600;">⚠ Daily limit reached — resets at midnight.</div>`
+          : (u.usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:4px;">Approaching today's limit.</div>` : "")}
+      </div>`;
 
     const statusRowUser = `
       <div style="display:flex; align-items:center; gap:10px;">
@@ -1357,12 +1381,8 @@ RULES:
           <div style="font-size:15px; font-weight:800; color:var(--teal-dark);">${savedModel}</div>
         </div>
       </div>
-      <div style="height:10px; background:var(--border); border-radius:5px; margin-top:14px; overflow:hidden;">
-        <div style="height:100%; width:${usagePct}%; background:linear-gradient(90deg, var(--teal), var(--blue)); border-radius:5px; transition:width 0.3s;"></div>
-      </div>
-      <div style="font-size:11px; color:var(--muted2); margin-top:6px; text-transform:uppercase; letter-spacing:0.04em; font-weight:600;">Today's usage</div>
-      ${remaining === 0 ? `<div style="font-size:12px;color:var(--red);margin-top:8px; font-weight:600;">⚠ Daily limit reached — resets at midnight. Contact your admin if you need to continue today.</div>`
-        : (usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:8px;">Approaching today's usage limit.</div>` : "")}
+      ${usageBarUser("Revenue &amp; GICS", rev)}
+      ${usageBarUser("GHG Scope 3", ghg)}
       <div style="text-align:right; margin-top:10px;"><a href="#" id="adminLoginLink" style="font-size:10px; color:var(--muted2); text-decoration:none;">Admin</a></div>
     `;
 
@@ -1372,25 +1392,31 @@ RULES:
       return;
     }
 
+    const usageBarAdmin = (label, u) => `
+      <div style="margin-top:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-size:11px; color:var(--muted2); text-transform:uppercase; letter-spacing:0.04em; font-weight:700;">${label}</span>
+          <span style="display:flex; align-items:center; gap:8px; background:${u.tone.bg}; border:1px solid ${u.tone.bd}; border-radius:16px; padding:3px 12px;">
+            <span style="font-size:13px; font-weight:800; color:${u.tone.c};">${u.used}<span style="opacity:0.5; font-weight:600;"> / ${u.limit}</span></span>
+          </span>
+        </div>
+        <div style="height:8px; background:var(--border); border-radius:4px; margin-top:6px; overflow:hidden;">
+          <div style="height:100%; width:${u.usagePct}%; background:linear-gradient(90deg, ${u.tone.c}, ${u.tone.c}); border-radius:4px; transition:width 0.3s;"></div>
+        </div>
+        ${u.remaining === 0 ? `<div style="font-size:11px;color:var(--red);margin-top:4px; font-weight:600;">⚠ Daily limit reached.</div>`
+          : (u.usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:4px;">Approaching limit (${u.remaining} left).</div>` : "")}
+      </div>`;
+
     const statusRowAdmin = `
-      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:14px;">
-        <div style="display:flex; align-items:center; gap:10px;">
-          <span style="font-size:20px;">⚡</span>
-          <div>
-            <div style="font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted2); font-weight:700;">Model</div>
-            <div style="font-size:15px; font-weight:800; color:var(--teal-dark);">${savedModel}</div>
-          </div>
-        </div>
-        <div style="display:flex; align-items:center; gap:10px; background:${tone.bg}; border:1px solid ${tone.bd}; border-radius:20px; padding:6px 16px;">
-          <span style="font-size:11px; color:${tone.c}; font-weight:700; text-transform:uppercase; letter-spacing:0.04em;">Today</span>
-          <span style="font-size:15px; font-weight:800; color:${tone.c};">${used}<span style="opacity:0.5; font-weight:600;"> / ${limit}</span></span>
+      <div style="display:flex; align-items:center; gap:10px;">
+        <span style="font-size:20px;">⚡</span>
+        <div>
+          <div style="font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--muted2); font-weight:700;">Model</div>
+          <div style="font-size:15px; font-weight:800; color:var(--teal-dark);">${savedModel}</div>
         </div>
       </div>
-      <div style="height:8px; background:var(--border); border-radius:4px; margin-top:12px; overflow:hidden;">
-        <div style="height:100%; width:${usagePct}%; background:linear-gradient(90deg, ${tone.c}, ${tone.c}); border-radius:4px; transition:width 0.3s;"></div>
-      </div>
-      ${remaining === 0 ? `<div style="font-size:12px;color:var(--red);margin-top:8px; font-weight:600;">⚠ Daily limit reached — resets at midnight.</div>`
-        : (usagePct > 80 ? `<div style="font-size:11px;color:var(--amber-dark);margin-top:8px;">Approaching today's limit (${remaining} left).</div>` : "")}
+      ${usageBarAdmin("Revenue &amp; GICS", rev)}
+      ${usageBarAdmin("GHG Scope 3", ghg)}
       <div style="text-align:right; margin-top:6px;"><a href="#" id="adminLogoutLink" style="font-size:10px; color:var(--muted2); text-decoration:none;">Log out of admin</a></div>
     `;
 
@@ -1411,8 +1437,10 @@ RULES:
         ${saved && !keyLooksValid ? `<div style="font-size:11px;color:var(--red);margin-bottom:6px;">⚠ This doesn't look like a Gemini key (should start with "AIza" or "AQ.").</div>` : ""}
         <div class="label" style="margin-top:10px;">Model ID</div>
         <input type="text" id="modelIdIn" value="${savedModel}" />
-        <div class="label" style="margin-top:10px;">Daily limit (companies per browser)</div>
-        <input type="number" id="dailyLimitIn" value="${limit}" min="1" step="1" />
+        <div class="label" style="margin-top:10px;">Daily limit — Revenue &amp; GICS (companies per browser)</div>
+        <input type="number" id="dailyLimitRevenueIn" value="${rev.limit}" min="1" step="1" />
+        <div class="label" style="margin-top:10px;">Daily limit — GHG Scope 3 (companies per browser)</div>
+        <input type="number" id="dailyLimitGhgIn" value="${ghg.limit}" min="1" step="1" />
         <div class="label" style="margin-top:10px;">Delay between API calls (ms)</div>
         <p style="font-size:11px;color:var(--muted2);margin:0 0 6px;">13000ms matches a free-tier key's rate limit. Lower (e.g. 500) if this key has billing enabled.</p>
         <input type="number" id="rateLimitIn" value="${localStorage.getItem("rate_limit_ms") || "13000"}" min="0" step="500" />
@@ -1430,7 +1458,8 @@ RULES:
     });
     el("apiKeyIn").type = "password"; // masked by default; the eye toggle above reveals it on demand
     el("rateLimitIn").addEventListener("change", (e) => localStorage.setItem("rate_limit_ms", String(Math.max(0, parseInt(e.target.value,10) || 0))));
-    el("dailyLimitIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
+    el("dailyLimitRevenueIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit_revenue", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
+    el("dailyLimitGhgIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit_ghg", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
     el("saveKeyBtn").addEventListener("click", () => {
       const val = el("apiKeyIn").value.trim();
       const modelVal = el("modelIdIn").value.trim();
