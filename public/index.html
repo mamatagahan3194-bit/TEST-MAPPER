@@ -893,18 +893,6 @@ RULES:
       }
     }
 
-    if (r.materiality_assessment && r.materiality_assessment.rating === "below_lowerbound" && !flaggedGreen) {
-      if (hasFy2023Report && r.fy2023OwnReport && r.fy2023OwnReport.scope3.value != null && prior != null && r.fy2023OwnReport.scope3.value < prior * 0.7) {
-        finalScope3 = null;
-        notes.push(`Materiality check: below lowerbound (${r.materiality_assessment.rationale}). Delayed-reporting pattern confirmed via FY2023's own report — FY2024 value blanked, FY2023 used as estimated proxy.`);
-        flaggedGreen = true;
-      } else {
-        finalScope3 = null;
-        notes.push(`Materiality check: below lowerbound (${r.materiality_assessment.rationale}). No delayed-reporting evidence available to explain it — company appears to be under-reporting; FY2024 value blanked, relying on estimated emissions instead.`);
-        flaggedGreen = true;
-      }
-    }
-
     if (!flaggedGreen && notes.length === 0) {
       notes.push(deltaPct != null ? `Delta ${deltaPct.toFixed(1)}% — within the ±30% threshold, no action needed.` : "Delta could not be calculated (missing current or prior figure).");
     }
@@ -1158,15 +1146,16 @@ RULES:
       // Deterministic materiality override: base the rating on the actual 15-category coverage check
       // rather than trusting a single free-text summary — this directly answers "are the sector-
       // material Scope 3 categories actually covered or not", auditable category by category.
+      // Coverage threshold: at least one sector-material category being disclosed counts as adequate
+      // coverage — this is informational only and never affects the reported Scope 3 value.
       const coverage = computeScope3Coverage(r.scope3_categories_disclosed);
       if (coverage.totalCategoriesReturned >= 10) { // only override if the model actually did the full 15-category check, not a partial/degraded response
-        const missingNames = coverage.materialMissing.map(c => `Cat ${c.category_number} (${c.category_name || ""})`).join(", ");
-        if (coverage.materialMissing.length === 0 && coverage.material.length > 0) {
-          r.materiality_assessment = { rating: "adequate", rationale: `All ${coverage.material.length} sector-material Scope 3 categories are disclosed: ${coverage.materialCovered.map(c=>`Cat ${c.category_number}`).join(", ")}.` };
-        } else if (coverage.materialMissing.length === 1) {
-          r.materiality_assessment = { rating: "borderline", rationale: `1 of ${coverage.material.length} sector-material categories is not disclosed: ${missingNames}.` };
-        } else if (coverage.materialMissing.length >= 2) {
-          r.materiality_assessment = { rating: "below_lowerbound", rationale: `${coverage.materialMissing.length} of ${coverage.material.length} sector-material categories are not disclosed: ${missingNames}.` };
+        if (coverage.material.length === 0) {
+          r.materiality_assessment = { rating: "adequate", rationale: "No categories were judged sector-material for this company, so there is nothing specific expected to be missing." };
+        } else if (coverage.materialCovered.length >= 1) {
+          r.materiality_assessment = { rating: "adequate", rationale: `At least one sector-material Scope 3 category is disclosed: ${coverage.materialCovered.map(c=>`Cat ${c.category_number} (${c.category_name||""})`).join(", ")}.` };
+        } else {
+          r.materiality_assessment = { rating: "borderline", rationale: `None of the ${coverage.material.length} sector-material categories (${coverage.material.map(c=>`Cat ${c.category_number}`).join(", ")}) are individually disclosed — worth a closer look, though this doesn't affect the reported Scope 3 total.` };
         }
       }
       company.scope3Coverage = coverage;
