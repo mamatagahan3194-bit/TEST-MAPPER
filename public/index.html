@@ -482,7 +482,7 @@ RULES:
    a. disclosed: true if the report gives it a specific value FOR ${ly} SPECIFICALLY (per rule 1b's column-matching), false otherwise.
    b. value: the figure if disclosed, else null.
    c. expected_material_for_sector: true/false — your judgment of whether this category would typically be expected to be material for a company in this sector, based on standard GHG Protocol / CDP Technical Note v3.0-style sector relevance guidance (e.g. Category 11 "Use of sold products" is typically material for automotive/durable goods/equipment manufacturers — including industrial equipment, machinery, and engineered components if they consume energy or fuel during use; Category 1 "Purchased goods and services" is typically material for most manufacturers and retailers; Category 6/7 travel/commuting are typically minor for asset-heavy industrials but more relevant for services/office-based companies; Category 15 "Investments" is typically material only for financial institutions). Base this ONLY on company_business_description and standard sector practice — NEVER mark a category as "not material" merely because the company didn't disclose it or because doing so would avoid flagging a gap. If you are noting a category as a data gap elsewhere in your response, expected_material_for_sector for that same category must be consistent with that concern, not contradict it.
-   d. materiality_rationale: one short phrase for why you rated it material or not material for this sector (e.g. "core input for manufacturing" or "not applicable — no financed investments").
+   d. materiality_rationale: MAX 6 WORDS explaining why material or not (e.g. "core manufacturing input" or "no financed investments").
    The 15 GHG Protocol Scope 3 categories are: 1 Purchased goods and services, 2 Capital goods, 3 Fuel- and energy-related activities, 4 Upstream transportation and distribution, 5 Waste generated in operations, 6 Business travel, 7 Employee commuting, 8 Upstream leased assets, 9 Downstream transportation and distribution, 10 Processing of sold products, 11 Use of sold products, 12 End-of-life treatment of sold products, 13 Downstream leased assets, 14 Franchises, 15 Investments.
 4. Extract any explicit statement of a METHODOLOGY CHANGE, RESTATEMENT, BOUNDARY CHANGE, CORPORATE ACTION (acquisition, merger, divestiture, demerger), or reason for a change in emissions figures year-over-year, quoting the relevant text (under 20 words) and its page number. If the report is silent on this, say so explicitly — do not infer a reason that isn't stated.
 5. company_business_description: 1-2 sentences on what the company does — this drives the sector-materiality judgment in rule 3, so be specific about its actual products/services, not generic.
@@ -998,7 +998,7 @@ RULES:
         const { selected, remainingRanked } = await scanAndSelectPages(pdf, maxPages, keywords, priorityKeywords);
         log(company, `${label}: found ${selected.length} relevant page(s).`);
         const runBatches = async (pages, tag) => {
-          const batchSize = 5;
+          const batchSize = 7; // increased from 5 — the mandatory 15-category output repeats on every batch regardless of page content, so fewer/larger batches cuts that repeated overhead
           let merged = null;
           let bestPartial = null; // whichever single batch actually found the real data table — its
           // materiality_assessment/stated_reason_for_change/company_business_description are trusted,
@@ -1045,7 +1045,7 @@ RULES:
       log(company, `Extracting Scope 1/2/3 data for ${latestYear} and materiality assessment...`);
       const mainInstruction = `Company: ${company.name||"Unknown"}\nLatest reporting year: ${latestYear}\nPrior reporting year: ${priorYear}\nExtract Scope 1/2/3 data per the schema from the pages shown above.`;
       let { merged: r, remainingRanked, pdf: mainPdf } = await readAndExtract(
-        company.fy2024File, GHG_KEYWORDS, 28, buildGhgMainSystem(latestYear, priorYear),
+        company.fy2024File, GHG_KEYWORDS, 22, buildGhgMainSystem(latestYear, priorYear),
         mainInstruction, `${latestYear} report`, GHG_PRIORITY_KEYWORDS
       );
 
@@ -1053,9 +1053,9 @@ RULES:
       // outside the initially selected pages (common with dense KPI tables) — expand the search
       // rather than reporting "no data" when the report may well contain it further in.
       if (!hasAnyScopeData(r) && remainingRanked.length > 0) {
-        log(company, `No Scope 1/2/3 figures found in the initial scan — expanding search to ${Math.min(20, remainingRanked.length)} more page(s) before giving up.`);
-        const extra = remainingRanked.slice(0, 20);
-        const batchSize = 5;
+        log(company, `No Scope 1/2/3 figures found in the initial scan — expanding search to ${Math.min(12, remainingRanked.length)} more page(s) before giving up.`);
+        const extra = remainingRanked.slice(0, 12);
+        const batchSize = 7;
         for (let i = 0; i < extra.length; i += batchSize) {
           const batchPages = extra.slice(i, i + batchSize);
           log(company, `${latestYear} report (fallback): reading batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
@@ -1128,7 +1128,7 @@ RULES:
         if (hasFy2023Report) {
           try {
             const { merged: priorResult } = await readAndExtract(
-              company.fy2023File, GHG_KEYWORDS, 20, buildGhgPriorYearSystem(priorYear),
+              company.fy2023File, GHG_KEYWORDS, 16, buildGhgPriorYearSystem(priorYear),
               `Extract ${priorYear}'s own Scope 1/2/3 figures per the schema.`,
               `${priorYear} own report`, GHG_PRIORITY_KEYWORDS
             );
@@ -1138,7 +1138,7 @@ RULES:
         if (hasFy2025Report) {
           try {
             const { merged: restResult } = await readAndExtract(
-              company.fy2025File, GHG_KEYWORDS, 20, buildGhgRestatementSystem(latestYear),
+              company.fy2025File, GHG_KEYWORDS, 16, buildGhgRestatementSystem(latestYear),
               `Check whether this report restates ${latestYear} Scope 1/2/3 figures, per the schema.`,
               "newer report (for restatement check)", GHG_PRIORITY_KEYWORDS
             );
