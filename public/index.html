@@ -59,6 +59,15 @@
   .pill.exact { color:var(--teal-dark); border-color:var(--teal-dark); background:var(--teal-bg); }
   .pill.est { color:var(--amber-dark); border-color:var(--amber-dark); background:var(--amber-bg); }
   .pill.warn { color:var(--red); border-color:var(--red-dark); background:var(--red-bg); }
+  .pill.good { color:var(--teal-dark); border-color:var(--teal-dark); background:var(--teal-bg); }
+  .pill.bad { color:var(--red); border-color:var(--red-dark); background:var(--red-bg); }
+  .pill.muted { color:var(--muted); border-color:var(--border-light); background:transparent; }
+  .matrix-box { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .cat-row { display:flex; align-items:center; gap:10px; padding:8px 12px; border-bottom:1px solid var(--border); font-size:12px; }
+  .cat-row:last-child { border-bottom:none; }
+  .cat-num { font-family:ui-monospace,monospace; color:var(--muted2); width:20px; flex-shrink:0; }
+  .cat-name { flex:1; }
+  .cat-val { color:var(--muted); font-size:11px; }
   .seg-body { padding:12px 16px; }
   .seg-desc { font-size:12px; color:var(--muted); margin-bottom:10px; line-height:1.5; }
   .alloc-row { display:grid; grid-template-columns:90px 1fr 70px 24px; gap:8px; align-items:center; margin-bottom:6px; }
@@ -449,10 +458,15 @@ RULES:
 RULES:
 1. Extract Scope 1, Scope 2 (location and/or market-based if both given), and Scope 3 total emissions for ${ly} — as directly and explicitly stated, never calculated or estimated by you.
 2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report.
-3. List which Scope 3 categories (of the 15 GHG Protocol categories) are explicitly disclosed with a value, and which are stated as excluded/not material/not applicable. If the report doesn't break Scope 3 into categories, note that.
+3. SCOPE 3 CATEGORY-BY-CATEGORY CHECK — MANDATORY FULL COVERAGE. scope3_categories_disclosed MUST contain exactly 15 entries, one for each GHG Protocol Scope 3 category number (1 through 15), even for categories not mentioned at all in the report. Never omit a category number. For EACH of the 15:
+   a. disclosed: true if the report gives it a specific value, false otherwise.
+   b. value: the figure if disclosed, else null.
+   c. expected_material_for_sector: true/false — your judgment of whether this category would typically be expected to be material for a company in this sector, based on standard GHG Protocol / CDP Technical Note v3.0-style sector relevance guidance (e.g. Category 11 "Use of sold products" is typically material for automotive/durable goods/equipment manufacturers; Category 1 "Purchased goods and services" is typically material for most manufacturers and retailers; Category 6/7 travel/commuting are typically minor for asset-heavy industrials but more relevant for services/office-based companies; Category 15 "Investments" is typically material only for financial institutions). Base this on company_business_description, not on what the company itself chose to report.
+   d. materiality_rationale: one short phrase for why you rated it material or not material for this sector (e.g. "core input for manufacturing" or "not applicable — no financed investments").
+   The 15 GHG Protocol Scope 3 categories are: 1 Purchased goods and services, 2 Capital goods, 3 Fuel- and energy-related activities, 4 Upstream transportation and distribution, 5 Waste generated in operations, 6 Business travel, 7 Employee commuting, 8 Upstream leased assets, 9 Downstream transportation and distribution, 10 Processing of sold products, 11 Use of sold products, 12 End-of-life treatment of sold products, 13 Downstream leased assets, 14 Franchises, 15 Investments.
 4. Extract any explicit statement of a METHODOLOGY CHANGE, RESTATEMENT, BOUNDARY CHANGE, CORPORATE ACTION (acquisition, merger, divestiture, demerger), or reason for a change in emissions figures year-over-year, quoting the relevant text (under 20 words) and its page number. If the report is silent on this, say so explicitly — do not infer a reason that isn't stated.
-5. company_business_description: 1-2 sentences on what the company does, used only to judge whether its Scope 3 category disclosures look proportionate for its sector (e.g. a retailer should very plausibly report purchased goods/services and downstream categories; if it reports none, that's a red flag).
-6. materiality_assessment: based on the categories disclosed vs. what would be expected for a company in this sector, state whether Scope 3 reporting appears "adequate", "borderline", or "below_lowerbound" (likely under-reporting), with a one-sentence rationale citing which expected categories seem to be missing or unexplained.
+5. company_business_description: 1-2 sentences on what the company does — this drives the sector-materiality judgment in rule 3, so be specific about its actual products/services, not generic.
+6. materiality_assessment: state whether Scope 3 reporting appears "adequate", "borderline", or "below_lowerbound", with a rationale grounded specifically in which expected-material categories (per rule 3c) are or aren't covered — this should be a direct consequence of the category-by-category check, not a separate impression.
 7. Never invent numbers or reasons. If something isn't stated in the pages shown, use null and note it in data_gaps.
 8. Include page number and a short source quote for every figure.
 9. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
@@ -460,7 +474,7 @@ RULES:
  "company_business_description": string|null,
  "fy2024": {"scope1": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}, "scope2": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}, "scope3": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}},
  "fy2023_comparative_shown_in_this_report": {"scope1": {"value": number|null}, "scope2": {"value": number|null}, "scope3": {"value": number|null}},
- "scope3_categories_disclosed": [{"category_number": "1-15", "disclosed": boolean, "value": number|null}],
+ "scope3_categories_disclosed": [{"category_number": 1, "category_name": "Purchased goods and services", "disclosed": boolean, "value": number|null, "expected_material_for_sector": boolean, "materiality_rationale": string}],
  "stated_reason_for_change": {"found": boolean, "type": "methodology_change|restatement|boundary_change|acquisition|merger|divestiture|demerger|other|not_stated", "quote": string|null, "page": number|null},
  "materiality_assessment": {"rating": "adequate|borderline|below_lowerbound", "rationale": string},
  "data_gaps": [string]
@@ -854,15 +868,60 @@ RULES:
   // Generic recursive merge for GHG extraction results across batches — prefers whichever batch
   // actually found a non-null value for each field, going deep into nested {value, unit, page, ...}
   // objects. Arrays are concatenated (some duplication possible, not harmful for a review UI).
+  // Every batch now returns all 15 Scope 3 categories (per the mandatory-coverage prompt rule), so
+  // naive array concatenation would create duplicate/conflicting entries per category across batches.
+  // This merges by category_number, keeping whichever batch's entry actually found a disclosed value.
+  function mergeScope3Categories(a, b) {
+    const combined = [...(a||[]), ...(b||[])];
+    const byCategory = new Map();
+    for (const entry of combined) {
+      const key = entry.category_number;
+      const existing = byCategory.get(key);
+      if (!existing) { byCategory.set(key, entry); continue; }
+      const existingIsBetter = (existing.disclosed && existing.value != null) || !entry.disclosed;
+      if (!existingIsBetter) byCategory.set(key, entry);
+    }
+    return Array.from(byCategory.values()).sort((x,y) => x.category_number - y.category_number);
+  }
+
   function mergeGhgPartial(a, b) {
     if (a == null) return b; if (b == null) return a;
     if (Array.isArray(a) && Array.isArray(b)) return [...a, ...b];
     if (typeof a !== "object" || typeof b !== "object") return (a === null || a === "" || a === undefined) ? b : a;
     const out = { ...a };
     for (const key in b) {
-      out[key] = mergeGhgPartial(out[key], b[key]);
+      if (key === "scope3_categories_disclosed" && Array.isArray(out[key]) && Array.isArray(b[key])) {
+        out[key] = mergeScope3Categories(out[key], b[key]);
+      } else {
+        out[key] = mergeGhgPartial(out[key], b[key]);
+      }
     }
     return out;
+  }
+
+  // How "rich" a single batch's result is in terms of actually-found Scope data — used to decide
+  // which batch's materiality_assessment/stated_reason_for_change/business_description should be
+  // trusted when merging, since a batch that saw zero numbers has no real basis to claim "no data
+  // exists" once another batch demonstrably found the real figures.
+  function ghgDataRichness(p) {
+    if (!p || !p.fy2024) return -1;
+    let score = 0;
+    if (p.fy2024.scope1 && p.fy2024.scope1.value != null) score++;
+    if (p.fy2024.scope2 && p.fy2024.scope2.value != null) score++;
+    if (p.fy2024.scope3 && p.fy2024.scope3.value != null) score += 2; // Scope 3 is the priority figure
+    score += (p.scope3_categories_disclosed || []).filter(c => c.disclosed).length;
+    return score;
+  }
+
+  // Deterministically computes which sector-material Scope 3 categories are actually covered vs.
+  // missing, from the 15-category array — this grounds the materiality rating in concrete per-
+  // category data rather than trusting a single free-text summary sentence.
+  function computeScope3Coverage(categories) {
+    const list = (categories || []).slice().sort((a,b) => a.category_number - b.category_number);
+    const material = list.filter(c => c.expected_material_for_sector);
+    const materialCovered = material.filter(c => c.disclosed);
+    const materialMissing = material.filter(c => !c.disclosed);
+    return { all: list, material, materialCovered, materialMissing, totalCategoriesReturned: list.length };
   }
 
   async function extractGhgCompany(company) {
@@ -887,6 +946,10 @@ RULES:
         const runBatches = async (pages, tag) => {
           const batchSize = 5;
           let merged = null;
+          let bestPartial = null; // whichever single batch actually found the real data table — its
+          // materiality_assessment/stated_reason_for_change/company_business_description are trusted,
+          // since a batch that saw zero numbers has no real basis to claim "no data exists" once
+          // another batch demonstrably found the actual figures.
           for (let i = 0; i < pages.length; i += batchSize) {
             const batchPages = pages.slice(i, i + batchSize);
             log(company, `${label}${tag}: reading batch ${Math.floor(i/batchSize)+1} (pages ${batchPages.join(", ")})...`);
@@ -900,9 +963,15 @@ RULES:
             try {
               const partial = await callClaudeWithRetry(systemPrompt, content, 2, { max_tokens: 1200 });
               merged = mergeGhgPartial(merged, partial);
+              if (ghgDataRichness(partial) > ghgDataRichness(bestPartial)) bestPartial = partial;
             } catch (e) {
               log(company, `⚠ ${label}${tag} batch ${Math.floor(i/batchSize)+1} failed to parse (${e.message}) — skipping.`);
             }
+          }
+          if (merged && bestPartial && ghgDataRichness(bestPartial) > 0) {
+            if (bestPartial.materiality_assessment) merged.materiality_assessment = bestPartial.materiality_assessment;
+            if (bestPartial.stated_reason_for_change) merged.stated_reason_for_change = bestPartial.stated_reason_for_change;
+            if (bestPartial.company_business_description) merged.company_business_description = bestPartial.company_business_description;
           }
           return merged;
         };
@@ -945,7 +1014,13 @@ RULES:
           content.push({ type:"text", text: mainInstruction });
           try {
             const partial = await callClaudeWithRetry(buildGhgMainSystem(latestYear, priorYear), content, 2, { max_tokens: 1200 });
+            const richerThanBefore = ghgDataRichness(partial) > ghgDataRichness(r);
             r = mergeGhgPartial(r, partial);
+            if (richerThanBefore && ghgDataRichness(partial) > 0) {
+              if (partial.materiality_assessment) r.materiality_assessment = partial.materiality_assessment;
+              if (partial.stated_reason_for_change) r.stated_reason_for_change = partial.stated_reason_for_change;
+              if (partial.company_business_description) r.company_business_description = partial.company_business_description;
+            }
           } catch (e) {
             log(company, `⚠ Fallback batch ${Math.floor(i/batchSize)+1} failed to parse (${e.message}) — skipping.`);
           }
@@ -978,6 +1053,30 @@ RULES:
         } catch (e) { log(company, `⚠ Newer-report extraction failed (${e.message}) — continuing without it.`); }
       }
 
+      // Final sanity check: if real Scope figures were actually found anywhere in the process, a
+      // materiality claim of "no data exists" is self-contradictory — don't let the decision tree
+      // act on it. This is a backstop in case the richness-based override above still missed a case.
+      if (hasAnyScopeData(r) && r.materiality_assessment && /no (quantitative|absolute).{0,30}(data|figures|emissions)|non.?existent|entirely missing|reporting non.?existent/i.test(r.materiality_assessment.rationale || "")) {
+        log(company, `⚠ Materiality assessment contradicted the actual extracted figures (claimed no data despite finding real Scope values) — corrected to reflect that data was found.`);
+        r.materiality_assessment = { rating: "adequate", rationale: "Corrected: real Scope 1/2/3 figures were found during extraction, contradicting an earlier batch's claim of no data — treat this rating as provisional and verify the category-level completeness manually." };
+      }
+
+      // Deterministic materiality override: base the rating on the actual 15-category coverage check
+      // rather than trusting a single free-text summary — this directly answers "are the sector-
+      // material Scope 3 categories actually covered or not", auditable category by category.
+      const coverage = computeScope3Coverage(r.scope3_categories_disclosed);
+      if (coverage.totalCategoriesReturned >= 10) { // only override if the model actually did the full 15-category check, not a partial/degraded response
+        const missingNames = coverage.materialMissing.map(c => `Cat ${c.category_number} (${c.category_name || ""})`).join(", ");
+        if (coverage.materialMissing.length === 0 && coverage.material.length > 0) {
+          r.materiality_assessment = { rating: "adequate", rationale: `All ${coverage.material.length} sector-material Scope 3 categories are disclosed: ${coverage.materialCovered.map(c=>`Cat ${c.category_number}`).join(", ")}.` };
+        } else if (coverage.materialMissing.length === 1) {
+          r.materiality_assessment = { rating: "borderline", rationale: `1 of ${coverage.material.length} sector-material categories is not disclosed: ${missingNames}.` };
+        } else if (coverage.materialMissing.length >= 2) {
+          r.materiality_assessment = { rating: "below_lowerbound", rationale: `${coverage.materialMissing.length} of ${coverage.material.length} sector-material categories are not disclosed: ${missingNames}.` };
+        }
+      }
+      company.scope3Coverage = coverage;
+
       const decision = applyGhgDecisionTree(r, hasFy2023Report, hasFy2025Report);
       company.result = { raw: r, decision };
       log(company, "Done.");
@@ -1005,6 +1104,7 @@ RULES:
     const rows = done.map(c => {
       const r = c.result.raw, d = c.result.decision;
       const ly = c.latestYear || "Latest", py = c.priorYear || "Prior";
+      const cov = c.scope3Coverage || computeScope3Coverage(r.scope3_categories_disclosed);
       return {
         Company: c.name || "(unnamed)",
         "Latest Year": ly,
@@ -1017,12 +1117,31 @@ RULES:
         "Final Scope 3 Value (after review)": d.finalScope3 != null ? d.finalScope3 : "BLANK — see comments",
         "Status": d.flaggedGreen ? "✅ Reviewed — see comments" : "No action needed",
         "Materiality Rating": r.materiality_assessment ? r.materiality_assessment.rating : "",
+        "Material Categories Covered": cov.materialCovered.map(x=>x.category_number).join(", "),
+        "Material Categories Missing": cov.materialMissing.map(x=>x.category_number).join(", "),
         "Comments": d.notes.join(" | "),
         "Data Gaps": (r.data_gaps || []).join("; "),
       };
     });
+    const categoryRows = [];
+    done.forEach(c => {
+      const r = c.result.raw;
+      (r.scope3_categories_disclosed || []).slice().sort((a,b)=>a.category_number-b.category_number).forEach(cat => {
+        categoryRows.push({
+          Company: c.name || "(unnamed)",
+          "Category #": cat.category_number,
+          "Category Name": cat.category_name || "",
+          "Expected Material for Sector": cat.expected_material_for_sector ? "Yes" : "No",
+          "Disclosed": cat.disclosed ? "Yes" : "No",
+          "Value": cat.value != null ? cat.value : "",
+          "Status": cat.expected_material_for_sector && !cat.disclosed ? "⚠ Material — NOT covered" : (cat.expected_material_for_sector && cat.disclosed ? "✅ Material — covered" : ""),
+          "Materiality Rationale": cat.materiality_rationale || "",
+        });
+      });
+    });
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), "GHG Scope 3 Check");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(categoryRows), "Scope 3 Category Coverage");
     XLSX.writeFile(wb, "ghg-scope3-check-export.xlsx");
   }
 
@@ -1439,6 +1558,22 @@ RULES:
           </div>
           <div style="margin-top:10px;"><span class="label">Final Scope 3 value (after review)</span><div style="font-weight:700;">${d.finalScope3!=null ? d.finalScope3.toLocaleString() : "BLANK — see comments below"}</div></div>
           ${r.materiality_assessment ? `<div class="quote" style="font-style:normal;margin-top:8px;"><b>Materiality:</b> ${r.materiality_assessment.rating} — ${r.materiality_assessment.rationale}</div>` : ""}
+          ${(r.scope3_categories_disclosed||[]).length ? `
+            <div class="label" style="margin-top:10px;">Scope 3 category coverage (${(r.scope3_categories_disclosed||[]).length} of 15 checked)</div>
+            <div class="matrix-box" style="margin-top:4px;">
+              ${r.scope3_categories_disclosed.slice().sort((a,b)=>a.category_number-b.category_number).map(c => {
+                const material = c.expected_material_for_sector;
+                const covered = c.disclosed;
+                const tone = material && !covered ? "bad" : (material && covered ? "good" : "muted");
+                const label = material && !covered ? "Material — NOT covered" : (material && covered ? "Material — covered" : (covered ? "Disclosed (not expected material)" : "Not material / not disclosed"));
+                return `<div class="cat-row">
+                  <span class="cat-num">${String(c.category_number).padStart(2,"0")}</span>
+                  <span class="cat-name">${c.category_name || ""}${c.value!=null ? ` <span class="cat-val">(${c.value.toLocaleString()})</span>` : ""}</span>
+                  <span class="pill ${tone}">${label}</span>
+                </div>`;
+              }).join("")}
+            </div>
+          ` : ""}
           <div class="label" style="margin-top:10px;">Comments</div>
           ${d.notes.map(n => `<div class="seg-desc" style="${d.flaggedGreen?'color:var(--blue-dark);':''}">• ${n}</div>`).join("")}
           ${(r.data_gaps||[]).length ? `<div class="quote" style="margin-top:8px;">Data gaps: ${r.data_gaps.join("; ")}</div>` : ""}
