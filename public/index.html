@@ -136,7 +136,7 @@
     </div>
 
     <div id="ghgSection" style="display:none;">
-      <p class="sub" style="margin-bottom:16px;">Compares FY2024 emissions against FY2023 (and FY2025 if available) to check Scope 3 deltas beyond ±30%, materiality/completeness, and delayed-reporting patterns — following the same review logic used for manual Scope 3 QA checks.</p>
+      <p class="sub" style="margin-bottom:16px;">Compares FY2024 emissions against FY2023 (and FY2025 if available) to check Scope 3 deltas if any and materiality/completeness compared to CDP, and delayed-reporting patterns.</p>
       <div class="toolbar">
         <button class="primary" id="addGhgCompanyBtn" style="width:auto;">+ Add company</button>
         <button class="secondary" id="processAllGhgBtn" style="width:auto;">▶ Process all pending</button>
@@ -237,7 +237,7 @@
 
   function el(id){ return document.getElementById(id); }
   function newCompany() {
-    return { id: idCounter++, name:"", year:"", file:null, log:[], loading:false, mapping:false, extraction:null, mapped:null, gicsSector:null, error:null, includeSnapshot:false };
+    return { id: idCounter++, name:"", year:"", file:null, log:[], loading:false, mapping:false, extraction:null, mapped:null, gicsSector:null, error:null, includeSnapshot:false, useWebLookup:false, includeExclusionary:false, exclusionaryResult:null };
   }
 
   // The model occasionally puts a real line break inside a text field instead of an escaped \n,
@@ -422,6 +422,22 @@ RULES:
 2. Never invent facts, never exceed two sentences — brevity is the point.
 3. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
 {"company_snapshot_brief": string}`;
+
+  // Keyword scan for the optional exclusionary-involvement pass — deliberately separate from core
+  // keywords so it doesn't dilute the main revenue/segment page selection unless the checkbox is on.
+  const EXCLUSIONARY_KEYWORDS = /nuclear (power|energy|fuel|reactor|weapon)|uranium|oil (and|&) gas|petroleum|crude oil|upstream (oil|exploration)|fossil fuel|coal (mining|power|fired)|thermal coal|defense (contract|industry|sector)|defence (contract|industry|sector)|military (equipment|hardware|contract)|weapons? (manufactur|system|production)|arms (trade|manufactur|export)|controversial weapons|cluster munition|landmine|tobacco (product|manufactur)|gambling|casino|adult entertainment/i;
+
+  // Compact, standalone prompt for the optional exclusionary-involvement check — same lightweight,
+  // tightly-capped pattern as the Company Snapshot pass, so it never adds cost unless requested.
+  const EXCLUSIONARY_SYSTEM = `You are an ESG screening analyst checking a company's annual report for involvement in commonly excluded/controversial industries. You are shown selected page images (each preceded by its page number), pre-filtered for likely relevant content.
+RULES:
+1. Check specifically for disclosed involvement in: nuclear power/weapons, oil & gas (upstream exploration/production, not just fuel purchases for own operations), thermal coal mining or coal-fired power, defense/weapons manufacturing or military contracting, controversial weapons (cluster munitions, landmines), tobacco manufacturing, and gambling/casino operations.
+2. Only flag genuine business involvement (revenue-generating activity, production, or manufacturing in these areas) — do NOT flag a company merely for being a customer/purchaser of energy, or for incidental mentions unrelated to their own operations.
+3. For each flagged involvement, give the category, a one-sentence description of the actual involvement found, and the page/quote it's based on.
+4. summary: ONE to TWO sentences overall. If nothing found, write exactly "No disclosed involvement in nuclear, oil & gas, coal, defense, controversial weapons, tobacco, or gambling found in the scanned pages."
+5. Never invent involvement that isn't explicitly stated — if the business description alone suggests a sector (e.g. "energy company") but no specific activity is confirmed in the pages shown, do not flag it; note the ambiguity instead.
+6. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
+{"summary": string, "flags": [{"category": "nuclear|oil_gas|coal|defense|controversial_weapons|tobacco|gambling", "description": string, "page": number|null, "source_quote": string|null}]}`;
 
   const MAPPING_SYSTEM = `You are an industry classification specialist mapping business segments to GICS codes (Global Industry Classification Standard, sub-industry level where possible), using your own knowledge since no external code list is provided.
 RULES:
@@ -721,6 +737,30 @@ RULES:
         }
       }
 
+      // Optional exclusionary-involvement pass — same lightweight, tightly-capped pattern as the
+      // Company Snapshot, stored separately on the company object rather than merged into extraction.
+      if (company.includeExclusionary) {
+        try {
+          const { selected: exclPages } = await scanAndSelectPages(pdf, 8, EXCLUSIONARY_KEYWORDS);
+          if (exclPages.length > 0) {
+            log(company, `Reading exclusionary-involvement pass (pages ${exclPages.join(", ")})...`);
+            const exclContent = [];
+            for (const p of exclPages) {
+              const b64 = await renderPageToBase64(pdf, p, 1.8);
+              exclContent.push({ type:"text", text:`Page ${p}:` });
+              exclContent.push({ type:"image_url", image_url:{ url: "data:image/png;base64," + b64 } });
+            }
+            exclContent.push({ type:"text", text:`Company: ${company.name||"Unknown"}\nCheck for exclusionary-industry involvement per the schema from the pages shown above.` });
+            company.exclusionaryResult = await callClaudeWithRetry(EXCLUSIONARY_SYSTEM, exclContent, 2, { max_tokens: 500 });
+          } else {
+            company.exclusionaryResult = { summary: "No pages matched exclusionary-industry keywords — no disclosed involvement found in the scanned document.", flags: [] };
+            log(company, "No exclusionary-relevant pages found — skipping exclusionary check.");
+          }
+        } catch (exclErr) {
+          log(company, `⚠ Exclusionary-involvement check failed (${exclErr.message}) — continuing without it.`);
+        }
+      }
+
       company.extraction = merged;
       log(company, `Done. Found ${merged.segments.length} segment(s).`);
 
@@ -747,7 +787,7 @@ RULES:
     company.mapping = true; company.mapped = company.mapped || {};
     renderAll();
     const segs = company.extraction.segments;
-    const useWebLookup = el("webLookupToggle") && el("webLookupToggle").checked;
+    const useWebLookup = company.useWebLookup === true;
     const chunkSize = 3; // GICS-only now (NAICS removed) — lighter output per segment allows slightly larger batches, cutting repeated system-prompt overhead
     for (let i = 0; i < segs.length; i += chunkSize) {
       const chunk = segs.slice(i, i + chunkSize);
@@ -1169,7 +1209,6 @@ RULES:
         "Material Categories Covered": cov.materialCovered.map(x=>x.category_number).join(", "),
         "Material Categories Missing": cov.materialMissing.map(x=>x.category_number).join(", "),
         "Comments": d.notes.join(" | "),
-        "Data Gaps": (r.data_gaps || []).join("; "),
       };
     });
     const categoryRows = [];
@@ -1216,6 +1255,7 @@ RULES:
     const gicsRows = [];
     const summaryRows = [];
     const snapshotRows = [];
+    const exclusionaryRows = [];
     for (const c of done) {
       const total = c.extraction.company_total_revenue;
       const segSum = c.extraction.segments.reduce((s,x) => s + (x.revenue_value || 0), 0);
@@ -1239,6 +1279,12 @@ RULES:
       });
       if (c.extraction.company_snapshot_brief) {
         snapshotRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Business", Detail: c.extraction.company_snapshot_brief });
+      }
+      if (c.exclusionaryResult) {
+        exclusionaryRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: "Summary", Detail: c.exclusionaryResult.summary || "", Page: "" });
+        for (const f of (c.exclusionaryResult.flags || [])) {
+          exclusionaryRows.push({ Company: c.name || "(unnamed)", "Fiscal Year": c.year || "", Category: (f.category||"").replace(/_/g," "), Detail: f.description || "", Page: f.page || "" });
+        }
       }
       for (const s of c.extraction.segments) {
         const m = findMapping(c, s.segment_name);
@@ -1267,6 +1313,7 @@ RULES:
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summaryRows), "Company Summary");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(snapshotRows), "Company Snapshot");
+    if (exclusionaryRows.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exclusionaryRows), "Exclusionary Check");
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(gicsRows), "GICS Mapping");
     XLSX.writeFile(wb, "segment-revenue-naics-gics-export.xlsx");
   }
@@ -1369,10 +1416,6 @@ RULES:
         <div class="label" style="margin-top:10px;">Delay between API calls (ms)</div>
         <p style="font-size:11px;color:var(--muted2);margin:0 0 6px;">13000ms matches a free-tier key's rate limit. Lower (e.g. 500) if this key has billing enabled.</p>
         <input type="number" id="rateLimitIn" value="${localStorage.getItem("rate_limit_ms") || "13000"}" min="0" step="500" />
-        <label style="display:flex; align-items:center; gap:8px; margin-top:14px; font-size:12px; color:var(--muted); cursor:pointer;">
-          <input type="checkbox" id="webLookupToggle" ${localStorage.getItem("web_lookup_enabled")==="true"?"checked":""} style="width:auto;" />
-          Use web search to fill gaps when a segment's product list is sparse
-        </label>
       </div>
     `;
     el("adminLogoutLink").addEventListener("click", (e) => { e.preventDefault(); sessionStorage.removeItem("is_admin"); renderApiKeyPanel(); });
@@ -1386,7 +1429,6 @@ RULES:
       el("apiKeyIn").type = keyVisible ? "text" : "password";
     });
     el("apiKeyIn").type = "password"; // masked by default; the eye toggle above reveals it on demand
-    el("webLookupToggle").addEventListener("change", (e) => localStorage.setItem("web_lookup_enabled", e.target.checked ? "true" : "false"));
     el("rateLimitIn").addEventListener("change", (e) => localStorage.setItem("rate_limit_ms", String(Math.max(0, parseInt(e.target.value,10) || 0))));
     el("dailyLimitIn").addEventListener("change", (e) => { localStorage.setItem("daily_limit", String(Math.max(1, parseInt(e.target.value,10) || DEFAULT_DAILY_LIMIT))); renderApiKeyPanel(); });
     el("saveKeyBtn").addEventListener("click", () => {
@@ -1483,6 +1525,21 @@ RULES:
       </div>`;
   }
 
+  function exclusionaryHtml(company) {
+    const res = company.exclusionaryResult;
+    if (!res) return "";
+    const hasFlags = (res.flags || []).length > 0;
+    return `
+      <div class="panel" style="${hasFlags ? "border-color:var(--red-dark);background:var(--red-bg);" : "border-color:var(--border);"}">
+        <div class="label" style="margin-bottom:6px; ${hasFlags ? "color:var(--red);" : ""}">${hasFlags ? "⚠" : "✓"} Exclusionary involvement check</div>
+        <div class="seg-desc">${res.summary || ""}</div>
+        ${hasFlags ? res.flags.map(f => `
+          <div class="seg-desc" style="margin-top:6px;color:var(--red);">
+            • <b>${(f.category||"").replace(/_/g," ")}</b>: ${f.description || ""}${f.page ? ` <span class="cat-val">(p.${f.page})</span>` : ""}
+          </div>`).join("") : ""}
+      </div>`;
+  }
+
   function gicsSectorBadge(company) {
     if (!company.gicsSector) return "";
     return `<span class="company-status done" title="${company.gicsSector.rationale||""}">GICS: ${company.gicsSector.sector} — ${company.gicsSector.industry_group}</span>`;
@@ -1518,6 +1575,14 @@ RULES:
           <input type="checkbox" class="snapshot-check" ${company.includeSnapshot ? "checked" : ""} style="width:auto;" />
           Include brief Company snapshot
         </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:4px 0; font-size:12px; color:var(--muted); cursor:pointer;">
+          <input type="checkbox" class="weblookup-check" ${company.useWebLookup ? "checked" : ""} style="width:auto;" />
+          Check official company website when a segment's product list is unclear
+        </label>
+        <label style="display:flex; align-items:center; gap:8px; margin:4px 0 8px; font-size:12px; color:var(--muted); cursor:pointer;">
+          <input type="checkbox" class="exclusionary-check" ${company.includeExclusionary ? "checked" : ""} style="width:auto;" />
+          Check exclusionary involvements (nuclear, oil &amp; gas, defense, coal, etc.)
+        </label>
         ${company.log.length ? `<div class="progress-log">${company.log.map(l=>"> "+l).join("<br>")}</div>` : ""}
         ${company.error ? `<div class="error-msg">${company.error}</div>` : ""}
         ${company.extraction && company.extraction.segment_disclosure ? (() => {
@@ -1530,6 +1595,7 @@ RULES:
         })() : ""}
         ${company.extraction && company.extraction.consolidation_note ? `<div class="panel" style="border-color:var(--amber-dark); background:var(--amber-bg); color:var(--amber-dark); font-size:12px; font-weight:600;">📍 ${company.extraction.consolidation_note}</div>` : ""}
         ${snapshotHtml(company)}
+        ${exclusionaryHtml(company)}
         ${reconciliationHtml(company)}
         ${company.mapping ? `<div class="panel" style="text-align:center; color:var(--muted);"><span class="spin"></span> Mapping segments to GICS codes...</div>` :
           (company.extraction ? company.extraction.segments.map((s,si) => segmentCardHtml(company, s, si)).join("") : "")}
@@ -1542,6 +1608,8 @@ RULES:
     cardEl.querySelector(".year-in").addEventListener("input", e => company.year = e.target.value);
     cardEl.querySelector(".file-in").addEventListener("change", e => { const f = e.target.files[0]; if (f) { company.file = f; renderAll(); } });
     cardEl.querySelector(".snapshot-check").addEventListener("change", e => { company.includeSnapshot = e.target.checked; });
+    cardEl.querySelector(".weblookup-check").addEventListener("change", e => { company.useWebLookup = e.target.checked; });
+    cardEl.querySelector(".exclusionary-check").addEventListener("change", e => { company.includeExclusionary = e.target.checked; });
     cardEl.querySelector(".extract-btn").addEventListener("click", () => extractCompany(company));
     cardEl.querySelector("[data-remove-company]").addEventListener("click", () => {
       state.companies = state.companies.filter(c => c.id !== company.id);
@@ -1628,7 +1696,7 @@ RULES:
           ` : ""}
           <div class="label" style="margin-top:10px;">Comments</div>
           ${d.notes.map(n => `<div class="seg-desc" style="${d.flaggedGreen?'color:var(--blue-dark);':''}">• ${n}</div>`).join("")}
-          ${(r.data_gaps||[]).length ? `<div class="quote" style="margin-top:8px;">Data gaps: ${r.data_gaps.join("; ")}</div>` : ""}
+          
         </div>`;
     }
     return `
