@@ -458,6 +458,7 @@ RULES:
 RULES:
 1. Extract Scope 1, Scope 2 (location and/or market-based if both given), and Scope 3 total emissions for ${ly} — as directly and explicitly stated, never calculated or estimated by you.
 1b. CRITICAL — COLUMN IDENTIFICATION. Multi-year trend tables (common in sustainability reports, often showing 3-5+ years of data side by side) list years in EITHER newest-first OR oldest-first order depending on the company's convention — NEVER assume which column is ${ly} based on position (e.g. "leftmost" or "first"). Always locate the actual year number printed in each column's header (e.g. "2025", "2024") and match values strictly by that printed label to ${ly} and ${py} specifically. If a table's column headers are unclear or you cannot confidently match a column to ${ly}, leave the value null and note the ambiguity in data_gaps rather than guessing based on column order. For BOTH ${ly} and ${py}, record the exact column header text you matched in column_header_matched (e.g. "FY2025" or "2025" or "Reporting year 2025") — this is a mandatory audit trail so the match can be verified against the source page.
+1c. MANDATORY SELF-CHECK before finalizing each value: compare what you wrote in column_header_matched against the year you are populating it for. If you are populating a figure under "${ly}" (fy2024 in the schema), column_header_matched MUST literally read ${ly} (or an unambiguous equivalent like "FY${ly}") — if it instead reads ${py} or any other year, that is a contradiction, and you must NOT use that figure for ${ly}. Either find the column that actually says ${ly}, or set value to null and explain the mismatch in data_gaps. Apply the same check to ${py} figures — column_header_matched there must say ${py}, not ${ly} or any other year. Do not let a figure end up under the wrong year's field just because it was the number you found first.
 2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report. Apply rule 1b here too — match by the printed year label, not position, and include page + column_header_matched for the comparative figures too.
 3. SCOPE 3 CATEGORY-BY-CATEGORY CHECK — MANDATORY FULL COVERAGE. scope3_categories_disclosed MUST contain exactly 15 entries, one for each GHG Protocol Scope 3 category number (1 through 15), even for categories not mentioned at all in the report. Never omit a category number. For EACH of the 15:
    a. disclosed: true if the report gives it a specific value FOR ${ly} SPECIFICALLY (per rule 1b's column-matching), false otherwise.
@@ -1033,6 +1034,30 @@ RULES:
       }
 
       if (!r) throw new Error(`All batches failed — no data could be extracted from the ${latestYear} report.`);
+
+      // Deterministic safety net for the column-matching instruction above: even with an explicit
+      // self-check rule, the model can still populate a value under the wrong year if it found a
+      // number before confirming the header. This catches any remaining contradiction between what
+      // column_header_matched literally says and which year field it was placed under, and nulls
+      // the value out rather than silently trusting it — better an honest gap than a wrong number.
+      const validateYearMatch = (obj, expectedYear, fieldLabel) => {
+        if (!obj || obj.value == null || !expectedYear) return;
+        const header = (obj.column_header_matched || "").toString();
+        if (header && !header.includes(expectedYear)) {
+          log(company, `⚠ ${fieldLabel}: extracted value's column header said "${header}", not ${expectedYear} — this looks like a year mismatch, so the value has been discarded rather than trusted. Check page ${obj.page || "?"} manually.`);
+          obj.value = null;
+        }
+      };
+      if (r.fy2024) {
+        validateYearMatch(r.fy2024.scope1, latestYear, "Scope 1");
+        validateYearMatch(r.fy2024.scope2, latestYear, "Scope 2");
+        validateYearMatch(r.fy2024.scope3, latestYear, "Scope 3");
+      }
+      if (r.fy2023_comparative_shown_in_this_report) {
+        validateYearMatch(r.fy2023_comparative_shown_in_this_report.scope1, priorYear, "Prior-year comparative Scope 1");
+        validateYearMatch(r.fy2023_comparative_shown_in_this_report.scope2, priorYear, "Prior-year comparative Scope 2");
+        validateYearMatch(r.fy2023_comparative_shown_in_this_report.scope3, priorYear, "Prior-year comparative Scope 3");
+      }
 
       const hasFy2023Report = !!company.fy2023File;
       const hasFy2025Report = !!company.fy2025File;
