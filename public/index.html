@@ -457,8 +457,8 @@ RULES:
     return `You are a GHG accounting specialist reviewing a company's ${ly} sustainability/annual report — this is the latest year being checked — for Scope 1, 2, and 3 emissions data, with a focus on producing solid, verifiable Scope 3 data. You are shown selected page images (each preceded by its page number).
 RULES:
 1. Extract Scope 1, Scope 2 (location and/or market-based if both given), and Scope 3 total emissions for ${ly} — as directly and explicitly stated, never calculated or estimated by you.
-1b. CRITICAL — COLUMN IDENTIFICATION. Multi-year trend tables (common in sustainability reports, often showing 3-5+ years of data side by side) list years in EITHER newest-first OR oldest-first order depending on the company's convention — NEVER assume which column is ${ly} based on position (e.g. "leftmost" or "first"). Always locate the actual year number printed in each column's header (e.g. "2025", "2024") and match values strictly by that printed label to ${ly} and ${py} specifically. If a table's column headers are unclear or you cannot confidently match a column to ${ly}, leave the value null and note the ambiguity in data_gaps rather than guessing based on column order.
-2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report. Apply rule 1b here too — match by the printed year label, not position.
+1b. CRITICAL — COLUMN IDENTIFICATION. Multi-year trend tables (common in sustainability reports, often showing 3-5+ years of data side by side) list years in EITHER newest-first OR oldest-first order depending on the company's convention — NEVER assume which column is ${ly} based on position (e.g. "leftmost" or "first"). Always locate the actual year number printed in each column's header (e.g. "2025", "2024") and match values strictly by that printed label to ${ly} and ${py} specifically. If a table's column headers are unclear or you cannot confidently match a column to ${ly}, leave the value null and note the ambiguity in data_gaps rather than guessing based on column order. For BOTH ${ly} and ${py}, record the exact column header text you matched in column_header_matched (e.g. "FY2025" or "2025" or "Reporting year 2025") — this is a mandatory audit trail so the match can be verified against the source page.
+2. ALSO extract the ${py} COMPARATIVE figures for Scope 1/2/3 as shown in THIS SAME report (the prior-year column typically shown alongside ${ly} in the same table) — this is what the company itself reported as its ${py} comparative in this report, not a separate ${py} report. Apply rule 1b here too — match by the printed year label, not position, and include page + column_header_matched for the comparative figures too.
 3. SCOPE 3 CATEGORY-BY-CATEGORY CHECK — MANDATORY FULL COVERAGE. scope3_categories_disclosed MUST contain exactly 15 entries, one for each GHG Protocol Scope 3 category number (1 through 15), even for categories not mentioned at all in the report. Never omit a category number. For EACH of the 15:
    a. disclosed: true if the report gives it a specific value FOR ${ly} SPECIFICALLY (per rule 1b's column-matching), false otherwise.
    b. value: the figure if disclosed, else null.
@@ -473,8 +473,8 @@ RULES:
 9. Your entire response must be a single JSON object and nothing else. First character {, last character }. No preamble, no commentary, no markdown fences.
 {
  "company_business_description": string|null,
- "fy2024": {"scope1": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}, "scope2": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}, "scope3": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null}},
- "fy2023_comparative_shown_in_this_report": {"scope1": {"value": number|null}, "scope2": {"value": number|null}, "scope3": {"value": number|null}},
+ "fy2024": {"scope1": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null, "column_header_matched": string|null}, "scope2": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null, "column_header_matched": string|null}, "scope3": {"value": number|null, "unit": string|null, "page": number|null, "source_quote": string|null, "column_header_matched": string|null}},
+ "fy2023_comparative_shown_in_this_report": {"scope1": {"value": number|null, "page": number|null, "column_header_matched": string|null}, "scope2": {"value": number|null, "page": number|null, "column_header_matched": string|null}, "scope3": {"value": number|null, "page": number|null, "column_header_matched": string|null}},
  "scope3_categories_disclosed": [{"category_number": 1, "category_name": "Purchased goods and services", "disclosed": boolean, "value": number|null, "expected_material_for_sector": boolean, "materiality_rationale": string}],
  "stated_reason_for_change": {"found": boolean, "type": "methodology_change|restatement|boundary_change|acquisition|merger|divestiture|demerger|other|not_stated", "quote": string|null, "page": number|null},
  "materiality_assessment": {"rating": "adequate|borderline|below_lowerbound", "rationale": string},
@@ -1132,6 +1132,8 @@ RULES:
         [`${ly} Scope 1`]: r.fy2024.scope1 ? r.fy2024.scope1.value : "",
         [`${ly} Scope 2`]: r.fy2024.scope2 ? r.fy2024.scope2.value : "",
         [`${ly} Scope 3 (as reported)`]: r.fy2024.scope3 ? r.fy2024.scope3.value : "",
+        [`${ly} Scope 3 Source (page / column)`]: r.fy2024.scope3 ? `p.${r.fy2024.scope3.page||"?"} — "${r.fy2024.scope3.column_header_matched||"?"}"` : "",
+        [`${py} Comparative Source (page / column)`]: (r.fy2023_comparative_shown_in_this_report && r.fy2023_comparative_shown_in_this_report.scope3) ? `p.${r.fy2023_comparative_shown_in_this_report.scope3.page||"?"} — "${r.fy2023_comparative_shown_in_this_report.scope3.column_header_matched||"?"}"` : "",
         [`${py} Comparative (Scope 3, per ${ly} report)`]: r.fy2023_comparative_shown_in_this_report ? r.fy2023_comparative_shown_in_this_report.scope3.value : "",
         "Scope 3 Delta %": d.deltaPct != null ? Math.round(d.deltaPct * 10) / 10 : "",
         "Final Scope 3 Value (after review)": d.finalScope3 != null ? d.finalScope3 : "BLANK — see comments",
@@ -1568,13 +1570,15 @@ RULES:
     if (company.result) {
       const r = company.result.raw, d = company.result.decision;
       const fmt = v => v != null ? v.toLocaleString() : "—";
+      const verifyLine = (obj) => obj ? `<div style="font-size:10px;color:var(--muted2);margin-top:2px;">${obj.page ? `p.${obj.page}` : ""}${obj.page && obj.column_header_matched ? " — " : ""}${obj.column_header_matched ? `col: "${obj.column_header_matched}"` : ""}</div>` : "";
       resultHtml = `
         <div class="panel">
+          <div style="font-size:11px;color:var(--amber-dark);background:var(--amber-bg);border:1px solid var(--amber-dark);border-radius:6px;padding:6px 10px;margin-bottom:10px;">⚠ Verify years against the source: check the page number and column header shown below each figure match what you expect before trusting these values.</div>
           <div class="recon-panel">
-            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 1</div><div>${fmt(r.fy2024.scope1 && r.fy2024.scope1.value)}</div></div>
-            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 2</div><div>${fmt(r.fy2024.scope2 && r.fy2024.scope2.value)}</div></div>
-            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 3 (reported)</div><div>${fmt(r.fy2024.scope3 && r.fy2024.scope3.value)}</div></div>
-            <div class="recon-item"><div class="label">${company.priorYear || "Prior"} comparative (Scope 3)</div><div>${fmt(r.fy2023_comparative_shown_in_this_report && r.fy2023_comparative_shown_in_this_report.scope3.value)}</div></div>
+            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 1</div><div>${fmt(r.fy2024.scope1 && r.fy2024.scope1.value)}</div>${verifyLine(r.fy2024.scope1)}</div>
+            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 2</div><div>${fmt(r.fy2024.scope2 && r.fy2024.scope2.value)}</div>${verifyLine(r.fy2024.scope2)}</div>
+            <div class="recon-item"><div class="label">${company.latestYear || "Latest"} Scope 3 (reported)</div><div>${fmt(r.fy2024.scope3 && r.fy2024.scope3.value)}</div>${verifyLine(r.fy2024.scope3)}</div>
+            <div class="recon-item"><div class="label">${company.priorYear || "Prior"} comparative (Scope 3)</div><div>${fmt(r.fy2023_comparative_shown_in_this_report && r.fy2023_comparative_shown_in_this_report.scope3.value)}</div>${verifyLine(r.fy2023_comparative_shown_in_this_report && r.fy2023_comparative_shown_in_this_report.scope3)}</div>
             <div class="recon-item"><div class="label">Delta</div><div style="color:${d.deltaPct!=null && Math.abs(d.deltaPct)>30 ? 'var(--red)':'var(--teal)'};font-weight:700;">${d.deltaPct!=null?d.deltaPct.toFixed(1)+"%":"n/a"}</div></div>
           </div>
           <div style="margin-top:10px;"><span class="label">Final Scope 3 value (after review)</span><div style="font-weight:700;">${d.finalScope3!=null ? d.finalScope3.toLocaleString() : "BLANK — see comments below"}</div></div>
